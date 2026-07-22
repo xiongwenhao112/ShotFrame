@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ShotFrame 图形界面 v0.3：文件队列 + 处理按钮 + 自定义样式。
-
-布局：品牌头部 / 左设置面板 / 右上实时预览 / 右下文件队列 / 底部状态栏。
-"""
+"""ShotFrame 图形界面：办公软件风格（工具栏 + 分组面板 + 状态栏）。"""
 import json
 import os
 import subprocess
@@ -31,14 +28,21 @@ try:
 except ImportError:
     _HAS_DND = False
 
-BRAND = "#6C5CE7"
-BRAND_DARK = "#5A4BD1"
-PAGE_BG = "#F2F3F7"
-CARD_BG = "#FFFFFF"
-TEXT_MAIN = "#2B2F3A"
-TEXT_SUB = "#8A90A0"
-OK_GREEN = "#1FA95C"
-ERR_RED = "#D64545"
+# ---------------- 办公风配色 ----------------
+ACCENT = "#2468C2"          # 主蓝（按钮/选中）
+ACCENT_DARK = "#1D549C"
+PAGE_BG = "#ECEEF1"         # 窗体底
+PANEL_BG = "#FFFFFF"        # 面板
+PANEL_HEAD = "#F3F4F6"      # 面板标题条
+TOOLBAR_BG = "#FAFBFC"
+BORDER = "#D5D8DE"          # 1px 边框
+HAIRLINE = "#EEF0F3"        # 行分隔
+TEXT_MAIN = "#333A45"
+TEXT_SUB = "#6B7482"
+SELECT_BG = "#E8F0FB"       # 选中行
+OK_GREEN = "#1E7E45"
+ERR_RED = "#C23B3B"
+R = 2                       # 全局圆角
 
 REPO_URL = "https://github.com/duxingqidao/ShotFrame"
 
@@ -46,8 +50,6 @@ CONFIG_DIR = os.path.join(
     os.environ.get("APPDATA", os.path.expanduser("~")), "ShotFrame")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 
-FRAME_BY_NAME = {v["name"]: k for k, v in FRAMES.items()}
-# 分段按钮空间有限，用短名显示
 FRAME_SHORT = {"mac": "Mac浅", "mac-dark": "Mac深", "win11": "Win11",
                "browser": "浏览器", "plain": "极简"}
 FRAME_BY_SHORT = {v: k for k, v in FRAME_SHORT.items()}
@@ -97,7 +99,7 @@ def split_dnd_paths(data):
     return paths
 
 
-def hex2rgb(s, default=(108, 92, 231)):
+def hex2rgb(s, default=(36, 104, 194)):
     try:
         s = s.lstrip("#")
         return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))
@@ -138,42 +140,41 @@ class App:
     def __init__(self):
         if _HAS_CTK:
             ctk.set_appearance_mode("light")
-            ctk.set_default_color_theme("blue")
         root = _Root()
         self.root = root
         root.title("ShotFrame · 截图加框")
         root.geometry("1080x700")
-        root.minsize(980, 640)
-        if _HAS_CTK:
-            root.configure(fg_color=PAGE_BG)
+        root.minsize(980, 620)
+        root.configure(fg_color=PAGE_BG) if _HAS_CTK else None
         self._set_icon()
 
         cfg = load_config()
-        self.font = self._mkfont(13)
-        self.font_small = self._mkfont(12)
+        self.f12 = self._mkfont(12)
+        self.f12b = self._mkfont(12, "bold")
+        self.f11 = self._mkfont(11)
 
         self.sample = make_sample()
         self.preview_src = self.sample
         self._preview_job = None
-        self.queue = []                 # list[QueueItem]
-        self.selected = None            # QueueItem
+        self.queue = []
+        self.selected = None
         self.busy = False
         self.stop_flag = False
         self.last_output = None
 
-        self.custom_c1 = hex2rgb(cfg.get("custom_c1", "#6C5CE7"))
+        self.custom_c1 = hex2rgb(cfg.get("custom_c1", "#2468C2"))
         self.custom_c2 = hex2rgb(cfg.get("custom_c2", "#EC4899"))
 
-        self._build_header()
+        self._build_toolbar()
         self._build_body(cfg)
         self._build_statusbar()
 
         if _HAS_DND:
-            for target in (root, self.queue_card):
+            for target in (root, self.queue_panel):
                 target.drop_target_register(DND_FILES)
                 target.dnd_bind("<<Drop>>", self.on_drop)
-            self.queue_card.dnd_bind("<<DropEnter>>", self._drag_on)
-            self.queue_card.dnd_bind("<<DropLeave>>", self._drag_off)
+            self.queue_panel.dnd_bind("<<DropEnter>>", self._drag_on)
+            self.queue_panel.dnd_bind("<<DropLeave>>", self._drag_off)
 
         self.on_backdrop_change()
         self.schedule_preview()
@@ -198,58 +199,124 @@ class App:
             except tk.TclError:
                 pass
 
-    # ------------------------------------------------------------ 头部
+    def _tool_btn(self, parent, text, command, primary=False, width=None):
+        kw = dict(text=text, command=command, font=self.f12, height=28,
+                  corner_radius=R)
+        if width:
+            kw["width"] = width
+        if primary:
+            kw.update(fg_color=ACCENT, hover_color=ACCENT_DARK,
+                      text_color="#FFFFFF")
+        else:
+            kw.update(fg_color="transparent", hover_color="#E9ECF1",
+                      text_color=TEXT_MAIN)
+        return ctk.CTkButton(parent, **kw)
 
-    def _build_header(self):
-        bar = ctk.CTkFrame(self.root, height=52, corner_radius=0,
-                           fg_color=BRAND)
+    @staticmethod
+    def _divider(parent):
+        f = ctk.CTkFrame(parent, width=1, height=20, fg_color="#D9DCE2",
+                         corner_radius=0)
+        f.pack(side="left", padx=6, pady=6)
+        return f
+
+    def _panel(self, parent, title):
+        """带 1px 边框和标题条的分组面板，返回内容容器。"""
+        outer = ctk.CTkFrame(parent, fg_color=PANEL_BG, corner_radius=R,
+                             border_width=1, border_color=BORDER)
+        head = ctk.CTkFrame(outer, fg_color=PANEL_HEAD, corner_radius=0,
+                            height=26)
+        head.pack(fill="x", padx=1, pady=(1, 0))
+        head.pack_propagate(False)
+        ctk.CTkLabel(head, text=title, font=self.f12b,
+                     text_color=TEXT_MAIN).pack(side="left", padx=8)
+        body = ctk.CTkFrame(outer, fg_color=PANEL_BG, corner_radius=0)
+        body.pack(fill="both", expand=True, padx=1, pady=(0, 1))
+        outer.head = head
+        outer.body = body
+        return outer
+
+    # ------------------------------------------------------------ 工具栏
+
+    def _build_toolbar(self):
+        bar = ctk.CTkFrame(self.root, height=40, corner_radius=0,
+                           fg_color=TOOLBAR_BG)
         bar.pack(fill="x")
         bar.pack_propagate(False)
-        ctk.CTkLabel(bar, text="ShotFrame", text_color="#FFFFFF",
-                     font=self._mkfont(18, "bold")).pack(side="left",
-                                                         padx=(18, 6))
-        ctk.CTkLabel(bar, text="截图加框 · 让截图一眼可辨",
-                     text_color="#D9D4FF", font=self.font).pack(side="left")
-        ctk.CTkButton(bar, text="关于", width=56, height=26,
-                      fg_color="#8578EC", hover_color=BRAND_DARK,
-                      font=self.font_small, command=self.show_about).pack(
-            side="right", padx=14)
-        ctk.CTkLabel(bar, text="v" + __version__, text_color="#BDB4F5",
-                     font=self.font_small).pack(side="right", padx=4)
+        line = ctk.CTkFrame(self.root, height=1, corner_radius=0,
+                            fg_color=BORDER)
+        line.pack(fill="x")
+
+        self._tool_btn(bar, "添加文件", self.browse, width=76).pack(
+            side="left", padx=(8, 2), pady=6)
+        self._tool_btn(bar, "添加文件夹", self.browse_dir, width=88).pack(
+            side="left", padx=2, pady=6)
+        self.clear_btn = self._tool_btn(bar, "清空列表", self.clear_queue,
+                                        width=76)
+        self.clear_btn.pack(side="left", padx=2, pady=6)
+        self._divider(bar)
+        self.go_btn = self._tool_btn(bar, "开始处理", self.start_processing,
+                                     primary=True, width=92)
+        self.go_btn.pack(side="left", padx=2, pady=6)
+        self.go_btn.configure(state="disabled")
+        self.stop_btn = self._tool_btn(bar, "停止", self.stop_processing,
+                                       width=56)
+        self.stop_btn.pack(side="left", padx=2, pady=6)
+        self.stop_btn.configure(state="disabled")
+        self._divider(bar)
+        self.open_btn = self._tool_btn(bar, "打开输出位置", self.open_output,
+                                       width=100)
+        self.open_btn.pack(side="left", padx=2, pady=6)
+        self.open_btn.configure(state="disabled")
+
+        self._tool_btn(bar, "关于", self.show_about, width=52).pack(
+            side="right", padx=8, pady=6)
 
     # ------------------------------------------------------------ 主体
 
     def _build_body(self, cfg):
         body = ctk.CTkFrame(self.root, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=14, pady=12)
+        body.pack(fill="both", expand=True, padx=8, pady=8)
         body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(0, weight=5)
         body.grid_rowconfigure(1, weight=4)
 
         self._build_settings(body, cfg)
-        self._build_preview(body)
-        self._build_queue(body)
 
-    # ---- 左：设置面板
+        pv = self._panel(body, "预览")
+        pv.grid(row=0, column=1, sticky="nsew")
+        self._build_preview(pv)
+
+        qp = self._panel(body, "文件队列")
+        qp.grid(row=1, column=1, sticky="nsew", pady=(8, 0))
+        self.queue_panel = qp
+        self._build_queue(qp)
+
+    # ---- 设置面板
     def _build_settings(self, body, cfg):
-        panel = ctk.CTkScrollableFrame(
-            body, width=270, corner_radius=12, fg_color=CARD_BG)
-        panel.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=(0, 12))
+        panel = self._panel(body, "样式设置")
+        panel.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=(0, 8))
+        wrap = ctk.CTkScrollableFrame(panel.body, width=252,
+                                      fg_color=PANEL_BG, corner_radius=0)
+        wrap.pack(fill="both", expand=True)
 
-        def section(text, pady=(14, 4)):
-            ctk.CTkLabel(panel, text=text, text_color=TEXT_SUB,
-                         font=self.font_small, anchor="w").pack(
-                fill="x", padx=14, pady=pady)
+        def caption(text, pady=(12, 3)):
+            ctk.CTkLabel(wrap, text=text, font=self.f11,
+                         text_color=TEXT_SUB, anchor="w").pack(
+                fill="x", padx=10, pady=pady)
 
-        section("窗口样式", pady=(10, 4))
+        caption("窗口样式", pady=(8, 3))
         self.frame_var = tk.StringVar(
             value=FRAME_SHORT.get(cfg.get("frame", "mac"), "Mac浅"))
         ctk.CTkSegmentedButton(
-            panel, values=list(FRAME_SHORT.values()),
-            variable=self.frame_var, command=lambda _v: self.schedule_preview(),
-            font=self.font_small, height=30).pack(fill="x", padx=12)
+            wrap, values=list(FRAME_SHORT.values()), variable=self.frame_var,
+            command=lambda _v: self.schedule_preview(), font=self.f11,
+            height=26, corner_radius=R, border_width=1,
+            fg_color="#E4E7EC", selected_color=ACCENT,
+            selected_hover_color=ACCENT_DARK, unselected_color="#F2F3F6",
+            unselected_hover_color="#E7EAEF",
+            text_color=TEXT_MAIN).pack(fill="x", padx=10)
 
-        section("背景")
+        caption("背景")
         bd_key = cfg.get("backdrop", "gray")
         if bd_key == "custom":
             bd_name = CUSTOM_GRAD if cfg.get("custom_type") == "gradient" \
@@ -258,183 +325,179 @@ class App:
             bd_name = BACKDROPS.get(bd_key, BACKDROPS["gray"])["name"]
         self.backdrop_var = tk.StringVar(value=bd_name)
         ctk.CTkOptionMenu(
-            panel, values=BACKDROP_NAMES, variable=self.backdrop_var,
-            command=lambda _v: self.on_backdrop_change(),
-            font=self.font, dropdown_font=self.font, height=32,
-            fg_color="#EEF0F6", button_color=BRAND,
-            button_hover_color=BRAND_DARK, text_color=TEXT_MAIN).pack(
-            fill="x", padx=12)
+            wrap, values=BACKDROP_NAMES, variable=self.backdrop_var,
+            command=lambda _v: self.on_backdrop_change(), font=self.f12,
+            dropdown_font=self.f12, height=28, corner_radius=R,
+            fg_color="#F2F3F6", button_color="#DDE1E8",
+            button_hover_color="#CFD5DE",
+            text_color=TEXT_MAIN).pack(fill="x", padx=10)
 
-        self.color_row = ctk.CTkFrame(panel, fg_color="transparent")
+        self.color_row = ctk.CTkFrame(wrap, fg_color="transparent")
         self.c1_btn = ctk.CTkButton(
-            self.color_row, text="颜色 1", width=76, height=28,
-            font=self.font_small, fg_color=rgb2hex(self.custom_c1),
+            self.color_row, text="颜色1", width=70, height=24, font=self.f11,
+            corner_radius=R, border_width=1, border_color=BORDER,
+            fg_color=rgb2hex(self.custom_c1),
             hover_color=rgb2hex(self.custom_c1),
             command=lambda: self.pick_color(1))
-        self.c1_btn.pack(side="left", padx=(0, 8))
+        self.c1_btn.pack(side="left", padx=(0, 6))
         self.c2_btn = ctk.CTkButton(
-            self.color_row, text="颜色 2", width=76, height=28,
-            font=self.font_small, fg_color=rgb2hex(self.custom_c2),
+            self.color_row, text="颜色2", width=70, height=24, font=self.f11,
+            corner_radius=R, border_width=1, border_color=BORDER,
+            fg_color=rgb2hex(self.custom_c2),
             hover_color=rgb2hex(self.custom_c2),
             command=lambda: self.pick_color(2))
         self.c2_btn.pack(side="left")
 
-        section("留白")
+        caption("留白")
         self.pad_var = tk.StringVar(
             value=PAD_NAMES.get(cfg.get("pad", "normal"), "标准"))
         ctk.CTkSegmentedButton(
-            panel, values=list(PAD_NAMES.values()), variable=self.pad_var,
-            command=lambda _v: self.schedule_preview(),
-            font=self.font_small, height=28).pack(fill="x", padx=12)
+            wrap, values=list(PAD_NAMES.values()), variable=self.pad_var,
+            command=lambda _v: self.schedule_preview(), font=self.f11,
+            height=26, corner_radius=R, border_width=1,
+            fg_color="#E4E7EC", selected_color=ACCENT,
+            selected_hover_color=ACCENT_DARK, unselected_color="#F2F3F6",
+            unselected_hover_color="#E7EAEF",
+            text_color=TEXT_MAIN).pack(fill="x", padx=10)
 
-        section("圆角 / 阴影")
-        row = ctk.CTkFrame(panel, fg_color="transparent")
-        row.pack(fill="x", padx=12)
         self.radius_var = tk.IntVar(value=int(cfg.get("radius", 12)))
         self.shadow_var = tk.IntVar(value=int(cfg.get("shadow", 60)))
-        ctk.CTkLabel(row, text="圆角", font=self.font_small,
-                     text_color=TEXT_SUB, width=30).grid(row=0, column=0)
-        ctk.CTkSlider(row, from_=0, to=24, number_of_steps=24,
-                      variable=self.radius_var, progress_color=BRAND,
-                      command=lambda _v: self.schedule_preview()).grid(
-            row=0, column=1, sticky="ew", padx=6)
-        ctk.CTkLabel(row, text="阴影", font=self.font_small,
-                     text_color=TEXT_SUB, width=30).grid(row=1, column=0)
-        ctk.CTkSlider(row, from_=0, to=100, number_of_steps=20,
-                      variable=self.shadow_var, progress_color=BRAND,
-                      command=lambda _v: self.schedule_preview()).grid(
-            row=1, column=1, sticky="ew", padx=6, pady=(6, 0))
-        row.grid_columnconfigure(1, weight=1)
+        caption("圆角")
+        self._slider_row(wrap, self.radius_var, 0, 24, 24)
+        caption("阴影")
+        self._slider_row(wrap, self.shadow_var, 0, 100, 20)
 
-        section("标签文字（浏览器样式下为地址栏）")
+        caption("标签文字（浏览器样式下为地址栏）")
         self.label_var = tk.StringVar(value=cfg.get("label", "实测截图"))
-        ctk.CTkEntry(panel, textvariable=self.label_var, font=self.font,
-                     height=32).pack(fill="x", padx=12)
+        ctk.CTkEntry(wrap, textvariable=self.label_var, font=self.f12,
+                     height=28, corner_radius=R, border_width=1,
+                     border_color=BORDER).pack(fill="x", padx=10)
         self.label_var.trace_add("write", lambda *_: self.schedule_preview())
 
         self.dots_var = tk.BooleanVar(value=cfg.get("dots", True))
-        ctk.CTkSwitch(panel, text="窗口圆点", variable=self.dots_var,
-                      command=self.schedule_preview, font=self.font,
-                      progress_color=BRAND).pack(anchor="w", padx=14,
-                                                 pady=(12, 0))
+        ctk.CTkCheckBox(
+            wrap, text="窗口圆点", variable=self.dots_var,
+            command=self.schedule_preview, font=self.f12,
+            checkbox_width=16, checkbox_height=16, corner_radius=R,
+            border_width=1, border_color="#9AA1AD", fg_color=ACCENT,
+            hover_color=ACCENT_DARK).pack(anchor="w", padx=10, pady=(10, 0))
 
-        section("水印（右下角署名，留空不加）")
+        caption("水印（右下角署名，留空不加）")
         self.wm_var = tk.StringVar(value=cfg.get("watermark", ""))
-        wm = ctk.CTkEntry(panel, textvariable=self.wm_var, font=self.font,
-                          height=32, placeholder_text="例如 公众号 · 笃行其道")
-        wm.pack(fill="x", padx=12)
+        ctk.CTkEntry(wrap, textvariable=self.wm_var, font=self.f12,
+                     height=28, corner_radius=R, border_width=1,
+                     border_color=BORDER,
+                     placeholder_text="例如 公众号 · 笃行其道").pack(
+            fill="x", padx=10)
         self.wm_var.trace_add("write", lambda *_: self.schedule_preview())
 
-        section("输出位置")
-        self.out_mode = tk.StringVar(value=cfg.get("out_mode", "sub"))
+        caption("输出位置")
+        self.out_mode = tk.StringVar(
+            value="同目录加框文件夹" if cfg.get("out_mode", "sub") == "sub"
+            else "自定义目录")
         ctk.CTkSegmentedButton(
-            panel, values=["同目录加框文件夹", "自定义目录"],
+            wrap, values=["同目录加框文件夹", "自定义目录"],
             variable=self.out_mode,
-            command=lambda _v: self.on_outmode_change(),
-            font=self.font_small, height=28).pack(fill="x", padx=12)
-        self.out_mode.set("同目录加框文件夹" if cfg.get("out_mode", "sub") == "sub"
-                          else "自定义目录")
+            command=lambda _v: self.on_outmode_change(), font=self.f11,
+            height=26, corner_radius=R, border_width=1,
+            fg_color="#E4E7EC", selected_color=ACCENT,
+            selected_hover_color=ACCENT_DARK, unselected_color="#F2F3F6",
+            unselected_hover_color="#E7EAEF",
+            text_color=TEXT_MAIN).pack(fill="x", padx=10)
         self.out_dir = cfg.get("out_dir", "")
         self.out_btn = ctk.CTkButton(
-            panel, text=self._out_btn_text(), font=self.font_small,
-            fg_color="#EEF0F6", text_color=TEXT_MAIN, hover_color="#E2E4EE",
-            height=28, command=self.pick_out_dir)
-        self.out_btn.pack(fill="x", padx=12, pady=(6, 12))
+            wrap, text=self._out_btn_text(), font=self.f11, height=26,
+            corner_radius=R, border_width=1, border_color=BORDER,
+            fg_color="#F2F3F6", text_color=TEXT_MAIN,
+            hover_color="#E7EAEF", command=self.pick_out_dir)
+        self.out_btn.pack(fill="x", padx=10, pady=(6, 10))
         self.on_outmode_change(init=True)
 
-    # ---- 右上：预览
-    def _build_preview(self, body):
-        right = ctk.CTkFrame(body, corner_radius=12, fg_color=CARD_BG)
-        right.grid(row=0, column=1, sticky="nsew")
-        right.grid_rowconfigure(1, weight=1)
-        right.grid_columnconfigure(0, weight=1)
-        head = ctk.CTkFrame(right, fg_color="transparent")
-        head.grid(row=0, column=0, sticky="ew", padx=16, pady=(10, 0))
-        ctk.CTkLabel(head, text="实时预览", text_color=TEXT_SUB,
-                     font=self.font_small).pack(side="left")
+    def _slider_row(self, parent, var, lo, hi, steps):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=10)
+        val = ctk.CTkLabel(row, text=str(var.get()), font=self.f11,
+                           text_color=TEXT_MAIN, width=28, anchor="e")
+        val.pack(side="right")
+
+        def on_change(_v):
+            val.configure(text=str(int(var.get())))
+            self.schedule_preview()
+        ctk.CTkSlider(row, from_=lo, to=hi, number_of_steps=steps,
+                      variable=var, height=14, corner_radius=R,
+                      button_corner_radius=R, border_width=0,
+                      progress_color=ACCENT, button_color=ACCENT,
+                      button_hover_color=ACCENT_DARK,
+                      command=on_change).pack(side="left", fill="x",
+                                              expand=True, padx=(0, 6))
+
+    # ---- 预览面板
+    def _build_preview(self, panel):
         self.preview_hint = ctk.CTkLabel(
-            head, text="（点击队列中的图片可预览实图）",
-            text_color="#B8BdCa", font=self.font_small)
-        self.preview_hint.pack(side="left", padx=6)
-        self.preview_label = ctk.CTkLabel(right, text="")
-        self.preview_label.grid(row=1, column=0, sticky="nsew",
-                                padx=12, pady=(4, 10))
-        right.bind("<Configure>", lambda _e: self.schedule_preview())
+            panel.head, text="点击队列中的图片可预览实图",
+            text_color=TEXT_SUB, font=self.f11)
+        self.preview_hint.pack(side="right", padx=8)
+        self.preview_label = ctk.CTkLabel(panel.body, text="")
+        self.preview_label.pack(fill="both", expand=True, padx=8, pady=8)
+        panel.body.bind("<Configure>", lambda _e: self.schedule_preview())
 
-    # ---- 右下：文件队列
-    def _build_queue(self, body):
-        card = ctk.CTkFrame(body, corner_radius=12, fg_color=CARD_BG,
-                            border_width=2, border_color=CARD_BG)
-        card.grid(row=1, column=1, sticky="nsew", pady=(10, 0))
-        card.grid_rowconfigure(1, weight=1)
-        card.grid_columnconfigure(0, weight=1)
-        self.queue_card = card
-
-        head = ctk.CTkFrame(card, fg_color="transparent")
-        head.grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 2))
-        self.queue_title = ctk.CTkLabel(
-            head, text="文件队列（0）", text_color=TEXT_SUB,
-            font=self.font_small)
-        self.queue_title.pack(side="left")
-        ctk.CTkButton(head, text="清空", width=52, height=24,
-                      font=self.font_small, fg_color="#EEF0F6",
-                      text_color=TEXT_MAIN, hover_color="#E2E4EE",
-                      command=self.clear_queue).pack(side="right", padx=(6, 0))
-        ctk.CTkButton(head, text="添加文件夹", width=76, height=24,
-                      font=self.font_small, fg_color="#EEF0F6",
-                      text_color=TEXT_MAIN, hover_color="#E2E4EE",
-                      command=self.browse_dir).pack(side="right", padx=(6, 0))
-        ctk.CTkButton(head, text="添加文件", width=68, height=24,
-                      font=self.font_small, fg_color="#EEF0F6",
-                      text_color=TEXT_MAIN, hover_color="#E2E4EE",
-                      command=self.browse).pack(side="right")
+    # ---- 队列面板（表格样式）
+    def _build_queue(self, panel):
+        self.queue_title_panel = panel
+        # 表头
+        header = ctk.CTkFrame(panel.body, fg_color=PANEL_HEAD,
+                              corner_radius=0, height=24)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        ctk.CTkLabel(header, text="文件名", font=self.f11,
+                     text_color=TEXT_SUB, anchor="w").pack(
+            side="left", fill="x", expand=True, padx=8)
+        ctk.CTkLabel(header, text="状态", font=self.f11,
+                     text_color=TEXT_SUB, width=90, anchor="e").pack(
+            side="left", padx=4)
+        ctk.CTkLabel(header, text="操作", font=self.f11,
+                     text_color=TEXT_SUB, width=40, anchor="center").pack(
+            side="left", padx=(2, 10))
+        ctk.CTkFrame(panel.body, height=1, corner_radius=0,
+                     fg_color=BORDER).pack(fill="x")
 
         self.queue_list = ctk.CTkScrollableFrame(
-            card, fg_color="#F7F8FB", corner_radius=8)
-        self.queue_list.grid(row=1, column=0, sticky="nsew", padx=12, pady=4)
+            panel.body, fg_color=PANEL_BG, corner_radius=0)
+        self.queue_list.pack(fill="both", expand=True)
         self.empty_hint = ctk.CTkLabel(
             self.queue_list,
-            text="把 图片 / 文件夹 / docx 拖到这里\n或点右上「添加文件」",
-            text_color="#A9AEBE", font=self.font)
-        self.empty_hint.pack(pady=26)
+            text="将 图片 / 文件夹 / docx 拖入此处，或使用工具栏「添加文件」",
+            text_color="#9AA1AD", font=self.f12)
+        self.empty_hint.pack(pady=22)
 
-        foot = ctk.CTkFrame(card, fg_color="transparent")
-        foot.grid(row=2, column=0, sticky="ew", padx=12, pady=(2, 10))
-        foot.grid_columnconfigure(0, weight=1)
-        self.progress = ctk.CTkProgressBar(foot, height=8,
-                                           progress_color=BRAND)
+        self.progress = ctk.CTkProgressBar(
+            panel.body, height=6, corner_radius=0, progress_color=ACCENT,
+            fg_color="#E4E7EC")
         self.progress.set(0)
-        self.progress.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        self.stop_btn = ctk.CTkButton(
-            foot, text="停止", width=64, height=34, font=self.font,
-            fg_color="#EEF0F6", text_color=TEXT_MAIN, hover_color="#E2E4EE",
-            state="disabled", command=self.stop_processing)
-        self.stop_btn.grid(row=0, column=1, padx=(0, 8))
-        self.open_btn = ctk.CTkButton(
-            foot, text="打开输出位置", width=100, height=34, font=self.font,
-            fg_color="#EEF0F6", text_color=TEXT_MAIN, hover_color="#E2E4EE",
-            state="disabled", command=self.open_output)
-        self.open_btn.grid(row=0, column=2, padx=(0, 8))
-        self.go_btn = ctk.CTkButton(
-            foot, text="开始处理", width=120, height=34,
-            font=self._mkfont(14, "bold"), fg_color=BRAND,
-            hover_color=BRAND_DARK, state="disabled",
-            command=self.start_processing)
-        self.go_btn.grid(row=0, column=3)
+        self.progress.pack(fill="x", side="bottom")
 
     def _build_statusbar(self):
+        line = ctk.CTkFrame(self.root, height=1, corner_radius=0,
+                            fg_color=BORDER)
+        line.pack(fill="x", side="bottom")
+        bar = ctk.CTkFrame(self.root, height=24, corner_radius=0,
+                           fg_color=PANEL_HEAD)
+        bar.pack(fill="x", side="bottom")
+        bar.pack_propagate(False)
         self.status_var = tk.StringVar(
-            value="准备就绪。拖入文件加入队列，点「开始处理」。")
-        ctk.CTkLabel(self.root, textvariable=self.status_var,
-                     text_color=TEXT_SUB, font=self.font_small,
-                     anchor="w").pack(fill="x", padx=20, pady=(0, 8))
+            value="就绪。将文件加入队列后，点工具栏「开始处理」。")
+        ctk.CTkLabel(bar, textvariable=self.status_var, font=self.f11,
+                     text_color=TEXT_SUB, anchor="w").pack(
+            side="left", fill="x", expand=True, padx=10)
+        ctk.CTkLabel(bar, text="ShotFrame v" + __version__, font=self.f11,
+                     text_color="#9AA1AD").pack(side="right", padx=10)
 
     # ------------------------------------------------------------ 设置联动
 
     def on_backdrop_change(self, *_):
         name = self.backdrop_var.get()
         if name in (CUSTOM_SOLID, CUSTOM_GRAD):
-            self.color_row.pack(fill="x", padx=12, pady=(6, 0))
+            self.color_row.pack(fill="x", padx=10, pady=(6, 0))
             self.c2_btn.configure(
                 state="normal" if name == CUSTOM_GRAD else "disabled")
         else:
@@ -444,8 +507,7 @@ class App:
     def pick_color(self, which):
         cur = self.custom_c1 if which == 1 else self.custom_c2
         rgb, _hex = colorchooser.askcolor(
-            color=rgb2hex(cur), title="选择颜色 %d" % which,
-            parent=self.root)
+            color=rgb2hex(cur), title="选择颜色 %d" % which, parent=self.root)
         if rgb is None:
             return
         rgb = tuple(int(v) for v in rgb)
@@ -469,8 +531,8 @@ class App:
     def _out_btn_text(self):
         if self.out_dir:
             short = self.out_dir
-            if len(short) > 28:
-                short = "…" + short[-27:]
+            if len(short) > 30:
+                short = "…" + short[-29:]
             return short
         return "点击选择输出目录"
 
@@ -516,7 +578,7 @@ class App:
             out = frame_image(self.preview_src,
                               self.current_style(for_preview=True))
             box_w = max(360, self.preview_label.winfo_width() - 8)
-            box_h = max(220, self.preview_label.winfo_height() - 8)
+            box_h = max(200, self.preview_label.winfo_height() - 8)
             im = out.copy()
             im.thumbnail((box_w, box_h), Image.LANCZOS)
             self._preview_img = ctk.CTkImage(light_image=im, dark_image=im,
@@ -528,10 +590,10 @@ class App:
     # ------------------------------------------------------------ 队列
 
     def _drag_on(self, _e):
-        self.queue_card.configure(border_color=BRAND)
+        self.queue_panel.configure(border_color=ACCENT)
 
     def _drag_off(self, _e):
-        self.queue_card.configure(border_color=CARD_BG)
+        self.queue_panel.configure(border_color=BORDER)
 
     def on_drop(self, event):
         self._drag_off(None)
@@ -576,7 +638,7 @@ class App:
                     existing.add(p)
                     added += 1
         if added:
-            self.status_var.set("已加入 %d 个文件，点「开始处理」。" % added)
+            self.status_var.set("已加入 %d 个文件，点工具栏「开始处理」。" % added)
             first_img = next((it for it in self.queue
                               if it.kind == "image"), None)
             if first_img and self.selected is None:
@@ -586,24 +648,30 @@ class App:
     def _append_item(self, path):
         item = QueueItem(path)
         self.queue.append(item)
-        row = ctk.CTkFrame(self.queue_list, fg_color="#FFFFFF",
-                           corner_radius=6)
-        row.pack(fill="x", pady=2, padx=2)
+        row = ctk.CTkFrame(self.queue_list, fg_color=PANEL_BG,
+                           corner_radius=0)
+        row.pack(fill="x")
         item.row = row
-        icon = "📄" if item.kind == "docx" else "🖼"
+        tag = "docx" if item.kind == "docx" else "img "
         name = ctk.CTkLabel(
-            row, text="%s  %s" % (icon, os.path.basename(path)),
-            font=self.font_small, text_color=TEXT_MAIN, anchor="w")
-        name.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=3)
+            row, text=" [%s] %s" % (tag, os.path.basename(path)),
+            font=self.f12, text_color=TEXT_MAIN, anchor="w")
+        name.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=2)
         item.status_label = ctk.CTkLabel(
-            row, text=item.status, font=self.font_small,
-            text_color=TEXT_SUB, width=88, anchor="e")
+            row, text=item.status, font=self.f11, text_color=TEXT_SUB,
+            width=90, anchor="e")
         item.status_label.pack(side="left", padx=4)
-        rm = ctk.CTkButton(row, text="✕", width=24, height=22,
-                           font=self.font_small, fg_color="#F1F2F6",
-                           text_color=TEXT_SUB, hover_color="#E2E4EE",
+        rm = ctk.CTkButton(row, text="移除", width=40, height=20,
+                           font=self.f11, corner_radius=R,
+                           fg_color="transparent", text_color=TEXT_SUB,
+                           hover_color="#E9ECF1",
                            command=lambda it=item: self.remove_item(it))
-        rm.pack(side="left", padx=(2, 6))
+        rm.pack(side="left", padx=(2, 10))
+        sep = ctk.CTkFrame(self.queue_list, height=1, corner_radius=0,
+                           fg_color=HAIRLINE)
+        sep.pack(fill="x")
+        item.note = ""
+        row.sep = sep
         for widget in (row, name):
             widget.bind("<Button-1>", lambda _e, it=item: self.select_item(it))
 
@@ -611,30 +679,32 @@ class App:
         self.selected = item
         for it in self.queue:
             if it.row:
-                it.row.configure(fg_color="#EDEBFB" if it is item
-                                 else "#FFFFFF")
+                it.row.configure(fg_color=SELECT_BG if it is item
+                                 else PANEL_BG)
         if item.kind == "image":
             try:
                 self.preview_src = Image.open(item.path).convert("RGB")
                 self.preview_hint.configure(
-                    text="（预览：%s）" % os.path.basename(item.path))
+                    text="预览：%s" % os.path.basename(item.path))
             except OSError:
                 self.preview_src = self.sample
         else:
             self.preview_src = self.sample
-            self.preview_hint.configure(text="（docx 将整篇处理，预览为示意图）")
+            self.preview_hint.configure(text="docx 将整篇处理，预览为示意图")
         self.schedule_preview()
 
     def remove_item(self, item):
         if self.busy:
             return
         if item.row:
+            if hasattr(item.row, "sep"):
+                item.row.sep.destroy()
             item.row.destroy()
         self.queue.remove(item)
         if self.selected is item:
             self.selected = None
             self.preview_src = self.sample
-            self.preview_hint.configure(text="（点击队列中的图片可预览实图）")
+            self.preview_hint.configure(text="点击队列中的图片可预览实图")
             self.schedule_preview()
         self._refresh_queue_ui()
 
@@ -643,20 +713,25 @@ class App:
             return
         for it in self.queue:
             if it.row:
+                if hasattr(it.row, "sep"):
+                    it.row.sep.destroy()
                 it.row.destroy()
         self.queue.clear()
         self.selected = None
         self.preview_src = self.sample
-        self.preview_hint.configure(text="（点击队列中的图片可预览实图）")
+        self.preview_hint.configure(text="点击队列中的图片可预览实图")
         self.progress.set(0)
         self._refresh_queue_ui()
         self.schedule_preview()
 
     def _refresh_queue_ui(self):
         n = len(self.queue)
-        self.queue_title.configure(text="文件队列（%d）" % n)
+        for w in self.queue_title_panel.head.winfo_children():
+            if isinstance(w, ctk.CTkLabel):
+                w.configure(text="文件队列（%d）" % n)
+                break
         if n == 0:
-            self.empty_hint.pack(pady=26)
+            self.empty_hint.pack(pady=22)
         else:
             self.empty_hint.pack_forget()
         self.go_btn.configure(
@@ -680,8 +755,8 @@ class App:
                                    and self.out_dir) else None
         self.stop_flag = False
         self.set_busy(True)
-        threading.Thread(target=self.work, args=(list(self.queue), style,
-                                                 out_dir),
+        threading.Thread(target=self.work,
+                         args=(list(self.queue), style, out_dir),
                          daemon=True).start()
 
     def stop_processing(self):
@@ -691,18 +766,19 @@ class App:
     def set_busy(self, busy):
         def _do():
             self.busy = busy
-            state_run = "disabled" if busy else "normal"
             self.go_btn.configure(
                 state="disabled" if (busy or not self.queue) else "normal",
                 text="处理中…" if busy else "开始处理")
             self.stop_btn.configure(state="normal" if busy else "disabled")
+            self.clear_btn.configure(state="disabled" if busy else "normal")
             if not busy and self.last_output:
                 self.open_btn.configure(state="normal")
             for it in self.queue:
                 if it.row:
                     for child in it.row.winfo_children():
                         if isinstance(child, ctk.CTkButton):
-                            child.configure(state=state_run)
+                            child.configure(
+                                state="disabled" if busy else "normal")
         self.root.after(0, _do)
 
     def work(self, items, style, out_dir):
@@ -712,7 +788,7 @@ class App:
             if self.stop_flag:
                 self._set_item_status(item, "已取消", TEXT_SUB)
                 continue
-            self._set_item_status(item, "处理中…", BRAND_DARK)
+            self._set_item_status(item, "处理中…", ACCENT_DARK)
             try:
                 if item.kind == "image":
                     dst = process_image_file(item.path, out_dir, style)
@@ -722,7 +798,7 @@ class App:
                     else:
                         ok += 1
                         self.last_output = os.path.dirname(dst)
-                        self._set_item_status(item, "✓ 完成", OK_GREEN)
+                        self._set_item_status(item, "完成", OK_GREEN)
                 else:
                     out_path = None
                     if out_dir:
@@ -735,18 +811,18 @@ class App:
                     ok += done
                     skip += skipped
                     self.last_output = dst
-                    self._set_item_status(
-                        item, "✓ %d张" % done, OK_GREEN,
-                        "跳过%d" % skipped)
+                    self._set_item_status(item, "完成 %d张" % done, OK_GREEN,
+                                          "跳过%d" % skipped)
             except Exception as e:  # noqa: BLE001
                 fail += 1
-                self._set_item_status(item, "✗ 失败", ERR_RED, repr(e))
-                self.root.after(0, lambda err=e, p=item.path: self.status_var.set(
-                    "失败 %s: %r" % (os.path.basename(p), err)))
+                self._set_item_status(item, "失败", ERR_RED, repr(e))
+                self.root.after(0, lambda err=e, p=item.path:
+                                self.status_var.set("失败 %s: %r" % (
+                                    os.path.basename(p), err)))
             self.root.after(0, lambda v=(i + 1) / total: self.progress.set(v))
         summary = "完成。加框 %d 张，跳过 %d 张" % (ok, skip)
         if fail:
-            summary += "，失败 %d 个（见队列状态）" % fail
+            summary += "，失败 %d 个" % fail
         if self.stop_flag:
             summary = "已停止。" + summary
         self.root.after(0, lambda: self.status_var.set(summary))
@@ -767,21 +843,23 @@ class App:
     def show_about(self):
         win = ctk.CTkToplevel(self.root)
         win.title("关于 ShotFrame")
-        win.geometry("380x230")
+        win.geometry("380x220")
         win.resizable(False, False)
         win.transient(self.root)
+        win.configure(fg_color=PANEL_BG)
         ctk.CTkLabel(win, text="ShotFrame · 截图加框",
-                     font=self._mkfont(16, "bold")).pack(pady=(22, 4))
+                     font=self._mkfont(15, "bold"),
+                     text_color=TEXT_MAIN).pack(pady=(24, 4))
         ctk.CTkLabel(win, text="v%s · MIT 开源 · 离线运行" % __version__,
-                     font=self.font_small,
-                     text_color=TEXT_SUB).pack()
+                     font=self.f11, text_color=TEXT_SUB).pack()
         ctk.CTkLabel(
-            win, font=self.font_small, text_color=TEXT_SUB, justify="center",
+            win, font=self.f11, text_color=TEXT_SUB, justify="center",
             text="给公众号 / 知乎 / 博客作者的截图美化工具\n"
-                 "5 种窗口框 × 预设与自定义背景 × docx 整篇处理").pack(pady=10)
-        ctk.CTkButton(win, text="打开开源主页", font=self.font, fg_color=BRAND,
-                      hover_color=BRAND_DARK,
-                      command=lambda: webbrowser.open(REPO_URL)).pack(pady=6)
+                 "5 种窗口框 × 预设与自定义背景 × docx 整篇处理").pack(pady=8)
+        ctk.CTkButton(win, text="打开开源主页", font=self.f12,
+                      corner_radius=R, fg_color=ACCENT,
+                      hover_color=ACCENT_DARK, height=28,
+                      command=lambda: webbrowser.open(REPO_URL)).pack(pady=8)
 
     def on_close(self):
         name = self.backdrop_var.get()
