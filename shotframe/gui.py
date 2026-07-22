@@ -162,6 +162,8 @@ class App:
         self.sample = make_sample()
         self.preview_src = self.sample
         self._preview_job = None
+        self._fit_job = None
+        self._frame_cache = None     # 全尺寸渲染缓存，缩放时只做快速缩略
         self.queue = []
         self.selected = None
         self.busy = False
@@ -462,8 +464,14 @@ class App:
         h = self.preview_holder.winfo_height()
         lw, lh = self._last_preview_box
         if abs(w - lw) < 4 and abs(h - lh) < 4:
-            return                      # 尺寸没有实质变化，不重渲染
-        self.schedule_preview()
+            return                      # 尺寸没有实质变化，不动
+        if self._frame_cache is not None:
+            # 缩放只走缓存快速路径：高频平滑跟随，不重跑加框管线
+            if self._fit_job:
+                self.root.after_cancel(self._fit_job)
+            self._fit_job = self.root.after(30, self._fit_from_cache)
+        else:
+            self.schedule_preview()
 
     # ---- 队列面板（表格样式）
     def _build_queue(self, panel):
@@ -596,6 +604,8 @@ class App:
     # ------------------------------------------------------------ 预览
 
     def schedule_preview(self, *_):
+        """样式或图片变化：作废缓存，安排一次完整渲染。"""
+        self._frame_cache = None
         if self._preview_job:
             self.root.after_cancel(self._preview_job)
         self._preview_job = self.root.after(120, self.render_preview)
@@ -608,17 +618,29 @@ class App:
         if w < 60 or h < 60:
             self._preview_job = self.root.after(250, self.render_preview)
             return
-        self._last_preview_box = (w, h)
         try:
-            out = frame_image(self.preview_src,
-                              self.current_style(for_preview=True))
-            im = out.copy()
-            im.thumbnail((max(120, w - 8), max(120, h - 8)), Image.LANCZOS)
-            self._preview_img = ctk.CTkImage(light_image=im, dark_image=im,
-                                             size=im.size)
-            self.preview_label.configure(image=self._preview_img, text="")
+            self._frame_cache = frame_image(
+                self.preview_src, self.current_style(for_preview=True))
         except Exception as e:  # noqa: BLE001
             self.status_var.set("预览出错: %r" % (e,))
+            return
+        self._fit_from_cache()
+
+    def _fit_from_cache(self):
+        """从全尺寸缓存快速缩放到当前容器，拖动缩放走这条廉价路径。"""
+        self._fit_job = None
+        if self._frame_cache is None:
+            return
+        w = self.preview_holder.winfo_width()
+        h = self.preview_holder.winfo_height()
+        if w < 60 or h < 60:
+            return
+        self._last_preview_box = (w, h)
+        im = self._frame_cache.copy()
+        im.thumbnail((max(120, w - 8), max(120, h - 8)), Image.LANCZOS)
+        self._preview_img = ctk.CTkImage(light_image=im, dark_image=im,
+                                         size=im.size)
+        self.preview_label.configure(image=self._preview_img, text="")
 
     # ------------------------------------------------------------ 队列
 

@@ -22,6 +22,15 @@ SAMPLES = 20             # 采样 2s
 
 
 def main():
+    import shotframe.gui as gui_mod
+    real_frame_image = gui_mod.frame_image
+    full_renders = {"n": 0}
+
+    def counting_frame_image(*a, **k):
+        full_renders["n"] += 1
+        return real_frame_image(*a, **k)
+    gui_mod.frame_image = counting_frame_image
+
     app = App()
     root = app.root
     app.add_paths([IMG])          # 带真实预览图，更接近用户场景
@@ -29,6 +38,20 @@ def main():
         app.select_item(app.queue[0])
 
     records = []
+    storm_base = {"n": 0}
+
+    # 连续小步缩放风暴：模拟用户拖拽，期间不应触发完整渲染
+    def storm(step=0):
+        if step == 0:
+            storm_base["n"] = full_renders["n"]
+        if step < 12:
+            w = 1080 + step * 22
+            root.geometry("%dx700+80+40" % w)
+            root.after(60, lambda: storm(step + 1))
+        else:
+            storm_full = full_renders["n"] - storm_base["n"]
+            print("风暴期间完整渲染次数: %d（快速路径应接管缩放）" % storm_full)
+            print("STORM-" + ("PASS" if storm_full <= 1 else "FAIL"))
 
     def snapshot():
         try:
@@ -41,11 +64,13 @@ def main():
         except Exception:  # noqa: BLE001
             return None
 
-    # 依次缩放
+    # 阶段1: 风暴（等 1.2s 让首次渲染完成、缓存就位）
+    root.after(1200, storm)
+    # 阶段2: 依次大幅缩放
     for i, g in enumerate(GEOMS):
-        root.after(400 + i * 500, lambda gg=g: root.geometry(gg))
+        root.after(2400 + i * 500, lambda gg=g: root.geometry(gg))
 
-    t0 = 400 + len(GEOMS) * 500 + SETTLE_MS
+    t0 = 2400 + len(GEOMS) * 500 + SETTLE_MS
 
     def sample(n=0):
         records.append(snapshot())
