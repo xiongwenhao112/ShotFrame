@@ -111,6 +111,12 @@ def rgb2hex(c):
     return "#%02X%02X%02X" % tuple(c)
 
 
+def contrast_text(rgb):
+    """按背景亮度返回黑/白文字色，保证色块上的字始终可读。"""
+    lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+    return "#1F242D" if lum > 150 else "#FFFFFF"
+
+
 if _HAS_CTK and _HAS_DND:
     class _Root(ctk.CTk, TkinterDnD.DnDWrapper):
         def __init__(self, *a, **k):
@@ -311,8 +317,8 @@ class App:
             wrap, values=list(FRAME_SHORT.values()), variable=self.frame_var,
             command=lambda _v: self.schedule_preview(), font=self.f11,
             height=26, corner_radius=R, border_width=1,
-            fg_color="#E4E7EC", selected_color=ACCENT,
-            selected_hover_color=ACCENT_DARK, unselected_color="#F2F3F6",
+            fg_color="#E4E7EC", selected_color="#CBDDF5",
+            selected_hover_color="#BDD3F0", unselected_color="#F2F3F6",
             unselected_hover_color="#E7EAEF",
             text_color=TEXT_MAIN).pack(fill="x", padx=10)
 
@@ -324,13 +330,14 @@ class App:
         else:
             bd_name = BACKDROPS.get(bd_key, BACKDROPS["gray"])["name"]
         self.backdrop_var = tk.StringVar(value=bd_name)
-        ctk.CTkOptionMenu(
+        self.backdrop_menu = ctk.CTkOptionMenu(
             wrap, values=BACKDROP_NAMES, variable=self.backdrop_var,
             command=lambda _v: self.on_backdrop_change(), font=self.f12,
             dropdown_font=self.f12, height=28, corner_radius=R,
             fg_color="#F2F3F6", button_color="#DDE1E8",
             button_hover_color="#CFD5DE",
-            text_color=TEXT_MAIN).pack(fill="x", padx=10)
+            text_color=TEXT_MAIN)
+        self.backdrop_menu.pack(fill="x", padx=10)
 
         self.color_row = ctk.CTkFrame(wrap, fg_color="transparent")
         self.c1_btn = ctk.CTkButton(
@@ -338,6 +345,7 @@ class App:
             corner_radius=R, border_width=1, border_color=BORDER,
             fg_color=rgb2hex(self.custom_c1),
             hover_color=rgb2hex(self.custom_c1),
+            text_color=contrast_text(self.custom_c1),
             command=lambda: self.pick_color(1))
         self.c1_btn.pack(side="left", padx=(0, 6))
         self.c2_btn = ctk.CTkButton(
@@ -345,6 +353,7 @@ class App:
             corner_radius=R, border_width=1, border_color=BORDER,
             fg_color=rgb2hex(self.custom_c2),
             hover_color=rgb2hex(self.custom_c2),
+            text_color=contrast_text(self.custom_c2),
             command=lambda: self.pick_color(2))
         self.c2_btn.pack(side="left")
 
@@ -355,8 +364,8 @@ class App:
             wrap, values=list(PAD_NAMES.values()), variable=self.pad_var,
             command=lambda _v: self.schedule_preview(), font=self.f11,
             height=26, corner_radius=R, border_width=1,
-            fg_color="#E4E7EC", selected_color=ACCENT,
-            selected_hover_color=ACCENT_DARK, unselected_color="#F2F3F6",
+            fg_color="#E4E7EC", selected_color="#CBDDF5",
+            selected_hover_color="#BDD3F0", unselected_color="#F2F3F6",
             unselected_hover_color="#E7EAEF",
             text_color=TEXT_MAIN).pack(fill="x", padx=10)
 
@@ -400,8 +409,8 @@ class App:
             variable=self.out_mode,
             command=lambda _v: self.on_outmode_change(), font=self.f11,
             height=26, corner_radius=R, border_width=1,
-            fg_color="#E4E7EC", selected_color=ACCENT,
-            selected_hover_color=ACCENT_DARK, unselected_color="#F2F3F6",
+            fg_color="#E4E7EC", selected_color="#CBDDF5",
+            selected_hover_color="#BDD3F0", unselected_color="#F2F3F6",
             unselected_hover_color="#E7EAEF",
             text_color=TEXT_MAIN).pack(fill="x", padx=10)
         self.out_dir = cfg.get("out_dir", "")
@@ -440,6 +449,8 @@ class App:
         self.preview_label = ctk.CTkLabel(panel.body, text="")
         self.preview_label.pack(fill="both", expand=True, padx=8, pady=8)
         panel.body.bind("<Configure>", lambda _e: self.schedule_preview())
+        self.preview_label.bind("<Configure>",
+                                lambda _e: self.schedule_preview())
 
     # ---- 队列面板（表格样式）
     def _build_queue(self, panel):
@@ -497,7 +508,9 @@ class App:
     def on_backdrop_change(self, *_):
         name = self.backdrop_var.get()
         if name in (CUSTOM_SOLID, CUSTOM_GRAD):
-            self.color_row.pack(fill="x", padx=10, pady=(6, 0))
+            # 紧跟在背景下拉框后面，而不是掉到面板末尾
+            self.color_row.pack(fill="x", padx=10, pady=(6, 0),
+                                after=self.backdrop_menu)
             self.c2_btn.configure(
                 state="normal" if name == CUSTOM_GRAD else "disabled")
         else:
@@ -514,11 +527,13 @@ class App:
         if which == 1:
             self.custom_c1 = rgb
             self.c1_btn.configure(fg_color=rgb2hex(rgb),
-                                  hover_color=rgb2hex(rgb))
+                                  hover_color=rgb2hex(rgb),
+                                  text_color=contrast_text(rgb))
         else:
             self.custom_c2 = rgb
             self.c2_btn.configure(fg_color=rgb2hex(rgb),
-                                  hover_color=rgb2hex(rgb))
+                                  hover_color=rgb2hex(rgb),
+                                  text_color=contrast_text(rgb))
         self.schedule_preview()
 
     def on_outmode_change(self, init=False):
@@ -574,6 +589,11 @@ class App:
 
     def render_preview(self):
         self._preview_job = None
+        # 窗口尚未完成布局时稍后重试，避免启动瞬间渲染出空白预览
+        if self.preview_label.winfo_width() < 60 \
+                or self.preview_label.winfo_height() < 60:
+            self._preview_job = self.root.after(250, self.render_preview)
+            return
         try:
             out = frame_image(self.preview_src,
                               self.current_style(for_preview=True))
