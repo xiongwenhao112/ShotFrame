@@ -89,6 +89,26 @@ def t_docx():
         check("docx 显示比例一致", bad == 0, "mismatch=%d" % bad)
 
 
+def t_custom_and_params():
+    sample = make_sample(420, 260)
+    solid = frame_image(sample, FrameStyle(
+        backdrop="custom", custom_type="solid",
+        custom_colors=((255, 230, 200),), watermark="公众号 · 测试"))
+    check("自定义纯色+水印", solid.width > 420)
+    grad = frame_image(sample, FrameStyle(
+        backdrop="custom", custom_type="gradient",
+        custom_colors=((255, 94, 98), (255, 195, 113)),
+        pad="loose", radius=24, shadow=100))
+    check("自定义渐变+宽松+满圆角满阴影", grad.width > 420)
+    flat = frame_image(sample, FrameStyle(pad="compact", radius=0, shadow=0))
+    check("紧凑+零圆角+零阴影", flat.width > 420)
+    # 深色自定义背景应用浅色水印分支
+    dark = frame_image(sample, FrameStyle(
+        backdrop="custom", custom_type="solid",
+        custom_colors=((20, 22, 28),), watermark="dark"))
+    check("深色自定义背景", dark.width > 420)
+
+
 def t_cli():
     from shotframe.cli import main as cli_main
     check("CLI --list-styles", cli_main(["--list-styles"]) == 0)
@@ -101,6 +121,11 @@ def t_cli():
         check("CLI 输出存在", os.path.exists(os.path.join(td, "a.png")))
         code2 = cli_main([src, "--preset", "purple", "--out", td])
         check("CLI 旧参数兼容", code2 == 0)
+        code3 = cli_main([src, "--bg-color", "#6C5CE7,#EC4899",
+                          "--pad", "loose", "--radius", "20",
+                          "--shadow", "90", "--watermark", "测试水印",
+                          "--out", td])
+        check("CLI 自定义色与新参数", code3 == 0)
 
 
 def main():
@@ -108,6 +133,7 @@ def main():
     t_edge_sizes()
     t_jpg_roundtrip()
     t_docx()
+    t_custom_and_params()
     t_cli()
     print("=" * 40)
     if FAILS:

@@ -45,15 +45,36 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 # 旧版 preset 参数兼容（v0.1 只有底色一种维度）
 LEGACY_PRESETS = {"gray", "purple", "blue", "green"}
 
+# 留白档位（乘在基础边距上）
+PAD_LEVELS = {"compact": 0.7, "normal": 1.0, "loose": 1.6}
+PAD_NAMES = {"compact": "紧凑", "normal": "标准", "loose": "宽松"}
+
 
 @dataclass
 class FrameStyle:
     frame: str = "mac"           # FRAMES key
-    backdrop: str = "gray"       # BACKDROPS key
+    backdrop: str = "gray"       # BACKDROPS key，或 "custom"
     label: str = "实测截图"       # 标题栏文字 / 浏览器地址栏文字，可为空
     show_dots: bool = True       # mac/browser 的三个圆点
     min_width: int = 200         # 小于该尺寸跳过（表情/图标）
     min_height: int = 100
+    pad: str = "normal"          # PAD_LEVELS key
+    radius: int = 12             # 圆角基准（0-24，随图宽自动缩放）
+    shadow: int = 60             # 阴影强度 0-100，0 为无阴影
+    watermark: str = ""          # 右下角水印文字，空为不加
+    custom_type: str = "solid"   # backdrop == "custom" 时生效: solid/gradient
+    custom_colors: tuple = ((108, 92, 231), (236, 72, 153))
+
+
+def backdrop_spec(style):
+    """解析背景定义（含自定义色）。"""
+    if style.backdrop == "custom":
+        colors = [tuple(c) for c in style.custom_colors]
+        if style.custom_type == "solid" or len(colors) < 2:
+            return {"type": "solid", "colors": colors[:1] or [(241, 242, 246)]}
+        return {"type": "gradient", "colors": colors[:2]}
+    spec = BACKDROPS.get(style.backdrop, BACKDROPS["gray"])
+    return {"type": spec["type"], "colors": spec["colors"]}
 
 
 # ---------------------------------------------------------------- 字体
@@ -89,9 +110,9 @@ def _lerp(c1, c2, t):
     return tuple(round(a + (b - a) * t) for a, b in zip(c1, c2))
 
 
-def build_backdrop(size, backdrop_key):
+def build_backdrop(size, style):
     """生成背景画布（纯色或对角渐变）。"""
-    spec = BACKDROPS.get(backdrop_key, BACKDROPS["gray"])
+    spec = backdrop_spec(style)
     w, h = size
     if spec["type"] == "solid":
         return Image.new("RGBA", size, tuple(spec["colors"][0]) + (255,))
@@ -105,10 +126,10 @@ def build_backdrop(size, backdrop_key):
     return small.resize((w, h), Image.BILINEAR).convert("RGBA")
 
 
-def _is_dark_backdrop(backdrop_key):
-    spec = BACKDROPS.get(backdrop_key, BACKDROPS["gray"])
-    c = spec["colors"][0]
-    return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) < 100
+def _is_dark_backdrop(style):
+    colors = backdrop_spec(style)["colors"]
+    lum = [0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] for c in colors]
+    return sum(lum) / len(lum) < 110
 
 
 # ---------------------------------------------------------------- 窗口栏绘制
@@ -202,18 +223,20 @@ def frame_image(im, style=None):
     im = im.convert("RGB")
     w, h = im.size
 
-    spec = BACKDROPS.get(style.backdrop, BACKDROPS["gray"])
+    spec = backdrop_spec(style)
     is_grad = spec["type"] == "gradient"
-    dark_bd = _is_dark_backdrop(style.backdrop)
+    dark_bd = _is_dark_backdrop(style)
 
     s = max(0.8, min(1.4, w / 1000.0))
-    pad = 1.7 if is_grad else 1.0            # 渐变背景留白更大更透气
+    pad = (1.7 if is_grad else 1.0) * PAD_LEVELS.get(style.pad, 1.0)
     mx = round(26 * s * pad)
     myt = round(20 * s * pad)
     myb = round(34 * s * pad)
-    radius = round(12 * s)
+    radius = round(max(0, min(24, style.radius)) * s)
     blur = round((16 if is_grad or dark_bd else 12) * s)
-    shadow_alpha = 80 if (is_grad or dark_bd) else 60
+    strength = max(0, min(100, style.shadow))
+    shadow_alpha = round(strength * (1.33 if (is_grad or dark_bd) else 1.0))
+    shadow_alpha = min(160, shadow_alpha)
 
     if style.frame == "plain":
         bar_h = 0
@@ -225,17 +248,18 @@ def frame_image(im, style=None):
     win_w, win_h = w, bar_h + h
     cw, ch = win_w + 2 * mx, win_h + myt + myb
 
-    base = build_backdrop((cw, ch), style.backdrop)
+    base = build_backdrop((cw, ch), style)
 
     # 投影
-    sh = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(sh)
-    off = round(5 * s)
-    sd.rounded_rectangle(
-        [mx, myt + off, mx + win_w - 1, myt + win_h - 1 + off],
-        radius=radius, fill=(10, 14, 26, shadow_alpha))
-    sh = sh.filter(ImageFilter.GaussianBlur(blur))
-    base = Image.alpha_composite(base, sh)
+    if shadow_alpha > 0:
+        sh = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(sh)
+        off = round(5 * s)
+        sd.rounded_rectangle(
+            [mx, myt + off, mx + win_w - 1, myt + win_h - 1 + off],
+            radius=radius, fill=(10, 14, 26, shadow_alpha))
+        sh = sh.filter(ImageFilter.GaussianBlur(blur))
+        base = Image.alpha_composite(base, sh)
 
     # 窗口本体
     win = Image.new("RGBA", (win_w, win_h), (255, 255, 255, 255))
@@ -262,6 +286,17 @@ def frame_image(im, style=None):
     bd.rounded_rectangle(
         [mx, myt, mx + win_w - 1, myt + win_h - 1],
         radius=radius, outline=border, width=max(1, round(s)))
+
+    # 右下角水印
+    if style.watermark:
+        wm_color = (255, 255, 255, 130) if (dark_bd or is_grad) \
+            else (60, 64, 80, 110)
+        wm_layer = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+        wmd = ImageDraw.Draw(wm_layer)
+        wmd.text((cw - round(14 * s), ch - round(8 * s)), style.watermark,
+                 font=load_font(round(13 * s)), fill=wm_color, anchor="rd")
+        base = Image.alpha_composite(base, wm_layer)
+
     return base.convert("RGB")
 
 

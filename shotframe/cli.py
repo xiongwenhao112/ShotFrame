@@ -36,17 +36,41 @@ def collect_inputs(paths, recursive=False):
     return images, docs
 
 
+def parse_bg_color(text):
+    """解析 --bg-color: "#RRGGBB" 或 "#RRGGBB,#RRGGBB"（渐变）。"""
+    parts = [p.strip().lstrip("#") for p in text.split(",") if p.strip()]
+    colors = []
+    for p in parts[:2]:
+        if len(p) != 6:
+            raise ValueError("颜色格式应为 #RRGGBB: " + p)
+        colors.append(tuple(int(p[i:i + 2], 16) for i in (0, 2, 4)))
+    if not colors:
+        raise ValueError("没有解析到颜色: " + text)
+    ctype = "gradient" if len(colors) == 2 else "solid"
+    return ctype, tuple(colors)
+
+
 def build_style(args):
     backdrop = args.bg
+    custom_type, custom_colors = "solid", ((108, 92, 231), (236, 72, 153))
     if args.preset:                      # v0.1 兼容
         if args.preset in LEGACY_PRESETS:
             backdrop = args.preset
         print("提示: --preset 已改名为 --bg，本次按 --bg %s 处理" % backdrop)
+    if args.bg_color:
+        custom_type, custom_colors = parse_bg_color(args.bg_color)
+        backdrop = "custom"
     return FrameStyle(
         frame=args.frame,
         backdrop=backdrop,
+        custom_type=custom_type,
+        custom_colors=custom_colors,
         label=("" if args.no_label else args.label),
         show_dots=not args.no_dots,
+        pad=args.pad,
+        radius=args.radius,
+        shadow=args.shadow,
+        watermark=args.watermark,
         min_width=args.min_width,
         min_height=args.min_height,
     )
@@ -76,6 +100,18 @@ def main(argv=None):
                         help="窗口样式，默认 mac")
     parser.add_argument("--bg", default="gray", choices=list(BACKDROPS),
                         help="背景，默认 gray")
+    parser.add_argument("--bg-color", default=None, metavar="#HEX[,#HEX]",
+                        help="自定义背景色，一个色号为纯色，两个为渐变，"
+                             "如 #FFE6C8 或 #6C5CE7,#EC4899")
+    parser.add_argument("--pad", default="normal",
+                        choices=["compact", "normal", "loose"],
+                        help="留白档位，默认 normal")
+    parser.add_argument("--radius", type=int, default=12,
+                        help="圆角 0-24，默认 12")
+    parser.add_argument("--shadow", type=int, default=60,
+                        help="阴影强度 0-100，默认 60")
+    parser.add_argument("--watermark", default="",
+                        help="右下角水印文字，默认不加")
     parser.add_argument("--preset", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--label", default="实测截图",
                         help="标题栏/地址栏文字，默认「实测截图」")
