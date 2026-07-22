@@ -1,36 +1,48 @@
 # ShotFrame · 截图加框
 
-一键给截图加上「应用窗口卡片」包装，让读者在图文里一眼认出这是截图，不再和正文糊在一起。
+一键给截图加上「窗口卡片」包装，让读者在图文里一眼认出这是截图，不再和正文糊在一起。
 
 给公众号、知乎、掘金、博客写图文的作者设计。离线运行，图片不出你的电脑。
+
+![gui](assets/screenshot-gui.png)
+
+## 它解决什么问题
+
+截图大多是白底黑字，贴进文章里和正文抢在一起，读者分不清哪是图哪是文。ShotFrame 给截图加上背景衬托、窗口栏、阴影描边，截图内容 100% 原样保留，只加包装。
+
+## 样式
+
+5 种窗口框 × 10 种背景，自由组合：
+
+- **窗口框**：Mac 浅色 / Mac 深色 / Windows 风 / 浏览器（带地址栏）/ 极简卡片
+- **背景**：浅灰、浅紫、浅蓝、浅绿、纯白、深空 6 种纯色，紫粉、蓝青、落日、青碧 4 种渐变
+
+![styles](assets/style-matrix.png)
 
 | 处理前 | 处理后 |
 |---|---|
 | ![before](assets/demo-before.png) | ![after](assets/demo-after.png) |
 
-## 它解决什么问题
+## 特点
 
-截图大多是白底黑字，贴进文章里和正文抢在一起，读者分不清哪是图哪是文。ShotFrame 给截图加上灰底衬托、白色圆角窗口、标题栏圆点、小标签和阴影描边，截图内容 100% 原样保留，只加包装。
-
-## 三个特点
-
-- **拖进来就完事**：图片、整个文件夹、甚至整篇 docx 文稿，拖进窗口一键全处理
-- **docx 整篇处理**：写完的稿子不用一张张抠图重贴，直接把 .docx 拖进来，所有插图加框并自动修正显示比例，输出「原名-加框.docx」，原文件不动
-- **离线 + 开源**：本地运行不上传，MIT 协议，代码就这几百行，欢迎自己改样式
+- **拖进来就完事**：图片、整个文件夹、甚至整篇 docx 文稿，拖进窗口自动全处理
+- **实时预览**：左边改样式，右边立刻看效果；拖入图片后预览直接用你的图
+- **docx 整篇处理**：写完的稿子不用一张张抠图重贴，把 .docx 拖进来，所有插图加框并自动修正显示比例，输出「原名-加框.docx」，原文件不动
+- **离线 + 开源**：本地运行不上传，MIT 协议，核心就几百行，欢迎自己改样式
 
 ## 下载使用
 
 到 [Releases](../../releases) 下载 `ShotFrame.exe`，双击打开，把图拖进去。
 
-可配置项，标签文字（默认「实测截图」，可清空）、底色（浅灰/浅紫/浅蓝/浅绿）、窗口圆点开关。小于 200×100 的小图（表情、图标）会自动跳过。
+标签文字（浏览器样式下显示为地址栏网址）、窗口圆点均可配置，设置会自动记住。小于 200×100 的小图（表情、图标）自动跳过。
 
 ## 命令行用法
 
 ```bash
-ShotFrame.exe 截图.png 另一张.jpg --label "实测截图"
-ShotFrame.exe 截图文件夹 --preset purple --recursive
-ShotFrame.exe 我的稿子.docx
-ShotFrame.exe 图.png --no-dots --no-label --out D:\输出目录
+ShotFrame.exe 截图.png --frame mac --bg gray --label "实测截图"
+ShotFrame.exe 截图文件夹 --frame browser --bg grad-violet --recursive
+ShotFrame.exe 我的稿子.docx --frame win11 --bg purple
+ShotFrame.exe --list-styles        # 列出全部样式
 ```
 
 注意，exe 是无控制台窗口的打包，命令行输出在部分终端里看不到；重度命令行用户建议直接跑源码 `python main.py ...`。
@@ -38,9 +50,10 @@ ShotFrame.exe 图.png --no-dots --no-label --out D:\输出目录
 ## 从源码运行
 
 ```bash
-pip install pillow python-docx tkinterdnd2
+pip install pillow python-docx tkinterdnd2 customtkinter
 python main.py            # 打开图形界面
 python main.py 图.png     # 命令行模式
+python test_matrix.py     # 回归测试
 ```
 
 ## 自己打包 exe
@@ -56,11 +69,15 @@ build.bat
 
 **docx 里有的图没处理？** 矢量图（emf/wmf/svg）、动图（gif）和小于 200×100 的图会跳过，处理日志里会写明。
 
-**图片会变形吗？** 不会。docx 模式下每张图的显示高度会按新宽高比重新计算，宽度保持不变。
+**图片会变形吗？** 不会。docx 模式下每张图的显示高度会按新宽高比重新计算，宽度保持不变，回归测试里有专门的比例一致性校验。
+
+## 设计参考
+
+窗口卡片的视觉语言参考了 ray.so（渐变背景）、screenshot.rocks / BrowserFrame（浏览器框）、CleanShot X / Xnapper（Mac 窗口）与 Windows 11 Fluent 风格，纯 Pillow 绘制，无外部素材依赖。
 
 ## 原理
 
-一张卡片 = 底色画布 + 投影 + 白色圆角窗口（标题栏 + 三个圆点 + 标签文字）+ 截图本体 + 描边。核心代码在 `shotframe/core.py` 的 `frame_image()`，docx 处理在 `shotframe/docx_frame.py`，改样式只需要动 `FrameStyle`。
+一张卡片 = 背景画布（纯色/对角渐变）+ 投影 + 窗口（标题栏 + 截图本体）+ 描边。核心代码在 `shotframe/core.py`，窗口栏每种样式一个绘制函数，docx 处理在 `shotframe/docx_frame.py`，加样式只需要在 `FRAMES`/`BACKDROPS` 里添一项再写一个小函数。
 
 ## License
 

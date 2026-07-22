@@ -6,6 +6,7 @@ python -m PyInstaller --noconfirm --onefile --windowed --name ShotFrame ^
   --icon assets\icon.ico ^
   --add-data "assets\icon.ico;assets" ^
   --collect-all tkinterdnd2 ^
+  --collect-all customtkinter ^
   main.py
 echo.
 echo 打包完成: dist\ShotFrame.exe
