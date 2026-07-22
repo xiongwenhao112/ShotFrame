@@ -8,8 +8,10 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from PIL import ImageGrab  # noqa: E402
 
 from shotframe.gui import App  # noqa: E402
+from test_fixtures import ensure_fixtures  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+IMG1, IMG9, DOCX = ensure_fixtures()
 OUT = os.path.join(HERE, "assets", "screenshot-gui.png")
 
 
@@ -18,11 +20,7 @@ def main():
     root = app.root
 
     def fill():
-        app.add_paths([
-            os.path.join(HERE, "test_data", "image1.png"),
-            os.path.join(HERE, "test_data", "image9.png"),
-            os.path.join(HERE, "test_data", "测试文稿.docx"),
-        ])
+        app.add_paths([IMG1, IMG9, DOCX])
         if app.queue:
             app.select_item(app.queue[0])
 

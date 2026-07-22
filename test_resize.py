@@ -11,8 +11,10 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from shotframe.gui import App  # noqa: E402
 
+from test_fixtures import ensure_fixtures  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-IMG = os.path.join(HERE, "test_data", "image9.png")
+_IMG1, IMG, _DOCX = ensure_fixtures()
 
 GEOMS = ["1080x700+80+40", "1360x840+60+30", "980x640+100+60",
          "1420x860+40+20", "1080x700+80+40"]

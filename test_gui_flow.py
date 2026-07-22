@@ -11,9 +11,10 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from shotframe.gui import App, CUSTOM_GRAD  # noqa: E402
 
+from test_fixtures import ensure_fixtures  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-IMG1 = os.path.join(HERE, "test_data", "image1.png")
-IMG9 = os.path.join(HERE, "test_data", "image9.png")
+IMG1, IMG9, _DOCX = ensure_fixtures()
 OUT1 = os.path.join(HERE, "test_data", "加框", "image1.png")
 
 

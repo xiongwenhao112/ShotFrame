@@ -66,16 +66,15 @@ def t_jpg_roundtrip():
 
 
 def t_docx():
-    src = os.path.join(HERE, "test_data", "测试文稿.docx")
-    if not os.path.exists(src):
-        check("docx 回归（缺测试文件，跳过）", True)
-        return
+    from test_fixtures import ensure_fixtures, DOCX_IMAGES
+    _i1, _i9, src = ensure_fixtures()
     with tempfile.TemporaryDirectory() as td:
         work = os.path.join(td, "doc.docx")
         shutil.copy2(src, work)
         out_path, done, skipped = process_docx(
             work, None, FrameStyle(frame="win11", backdrop="purple"))
-        check("docx 处理张数", done == 17, "done=%d skip=%d" % (done, skipped))
+        check("docx 处理张数", done == DOCX_IMAGES,
+              "done=%d skip=%d" % (done, skipped))
         # 校验显示比例与图片实际比例一致
         from docx import Document
         doc = Document(out_path)

@@ -1,5 +1,14 @@
 # ShotFrame · 截图加框
 
+<p align="left">
+  <img src="https://img.shields.io/badge/version-0.3.4-2468C2" alt="version">
+  <img src="https://img.shields.io/github/license/xiongwenhao112/ShotFrame?color=1E7E45" alt="license">
+  <img src="https://img.shields.io/badge/platform-Windows-informational" alt="platform">
+  <img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white" alt="python">
+  <img src="https://img.shields.io/badge/UI-%E5%8A%9E%E5%85%AC%E9%A3%8E-6B7482" alt="ui">
+  <img src="https://img.shields.io/github/stars/xiongwenhao112/ShotFrame?style=social" alt="stars">
+</p>
+
 一键给截图加上「窗口卡片」包装，让读者在图文里一眼认出这是截图，不再和正文糊在一起。
 
 给公众号、知乎、掘金、博客写图文的作者设计。离线运行，图片不出你的电脑。
@@ -55,10 +64,13 @@ ShotFrame.exe --list-styles        # 列出全部样式
 ## 从源码运行
 
 ```bash
+git clone https://github.com/xiongwenhao112/ShotFrame.git
+cd ShotFrame
 pip install pillow python-docx tkinterdnd2 customtkinter
 python main.py            # 打开图形界面
 python main.py 图.png     # 命令行模式
-python test_matrix.py     # 回归测试
+python test_matrix.py     # 回归测试（测试素材自动生成，无需外部文件）
+python test_resize.py     # 窗口缩放稳定性回归
 ```
 
 ## 自己打包 exe
@@ -86,4 +98,4 @@ build.bat
 
 ## License
 
-[MIT](LICENSE)，作者 [笃行其道](https://github.com/)。这个工具诞生于一次公众号排版，如果它帮到了你，欢迎点个 star。
+[MIT](LICENSE)，作者 [笃行其道](https://github.com/xiongwenhao112)。这个工具诞生于一次公众号排版，如果它帮到了你，欢迎点个 star。

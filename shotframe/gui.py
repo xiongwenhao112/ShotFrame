@@ -44,7 +44,7 @@ OK_GREEN = "#1E7E45"
 ERR_RED = "#C23B3B"
 R = 2                       # 全局圆角
 
-REPO_URL = "https://github.com/duxingqidao/ShotFrame"
+REPO_URL = "https://github.com/xiongwenhao112/ShotFrame"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("APPDATA", os.path.expanduser("~")), "ShotFrame")
