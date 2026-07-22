@@ -446,11 +446,24 @@ class App:
             panel.head, text="点击队列中的图片可预览实图",
             text_color=TEXT_SUB, font=self.f11)
         self.preview_hint.pack(side="right", padx=8)
-        self.preview_label = ctk.CTkLabel(panel.body, text="")
-        self.preview_label.pack(fill="both", expand=True, padx=8, pady=8)
-        panel.body.bind("<Configure>", lambda _e: self.schedule_preview())
-        self.preview_label.bind("<Configure>",
-                                lambda _e: self.schedule_preview())
+        # 固定容器：吸收图片尺寸变化，不把请求尺寸传回布局，
+        # 否则「渲染->改变尺寸->触发重排->再渲染」会让面板自己动个不停
+        self.preview_holder = ctk.CTkFrame(panel.body, fg_color=PANEL_BG,
+                                           corner_radius=0)
+        self.preview_holder.pack(fill="both", expand=True, padx=8, pady=8)
+        self.preview_holder.pack_propagate(False)
+        self.preview_label = ctk.CTkLabel(self.preview_holder, text="")
+        self.preview_label.place(relx=0.5, rely=0.5, anchor="center")
+        self._last_preview_box = (0, 0)
+        self.preview_holder.bind("<Configure>", self._on_preview_resize)
+
+    def _on_preview_resize(self, _e):
+        w = self.preview_holder.winfo_width()
+        h = self.preview_holder.winfo_height()
+        lw, lh = self._last_preview_box
+        if abs(w - lw) < 4 and abs(h - lh) < 4:
+            return                      # 尺寸没有实质变化，不重渲染
+        self.schedule_preview()
 
     # ---- 队列面板（表格样式）
     def _build_queue(self, panel):
@@ -589,18 +602,18 @@ class App:
 
     def render_preview(self):
         self._preview_job = None
+        w = self.preview_holder.winfo_width()
+        h = self.preview_holder.winfo_height()
         # 窗口尚未完成布局时稍后重试，避免启动瞬间渲染出空白预览
-        if self.preview_label.winfo_width() < 60 \
-                or self.preview_label.winfo_height() < 60:
+        if w < 60 or h < 60:
             self._preview_job = self.root.after(250, self.render_preview)
             return
+        self._last_preview_box = (w, h)
         try:
             out = frame_image(self.preview_src,
                               self.current_style(for_preview=True))
-            box_w = max(360, self.preview_label.winfo_width() - 8)
-            box_h = max(200, self.preview_label.winfo_height() - 8)
             im = out.copy()
-            im.thumbnail((box_w, box_h), Image.LANCZOS)
+            im.thumbnail((max(120, w - 8), max(120, h - 8)), Image.LANCZOS)
             self._preview_img = ctk.CTkImage(light_image=im, dark_image=im,
                                              size=im.size)
             self.preview_label.configure(image=self._preview_img, text="")
