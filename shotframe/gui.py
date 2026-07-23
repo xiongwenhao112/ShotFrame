@@ -15,6 +15,7 @@ from PIL import Image, ImageGrab
 from . import __version__
 from .core import (BACKDROPS, FRAMES, IMAGE_EXTS, PAD_NAMES, FrameStyle,
                    frame_image, make_sample, process_image_file)
+from .clipboard_out import copy_image_to_clipboard
 from .docx_frame import process_docx
 from .md_frame import process_markdown
 
@@ -133,7 +134,8 @@ else:
 
 
 class QueueItem:
-    __slots__ = ("path", "kind", "status", "row", "status_label", "note")
+    __slots__ = ("path", "kind", "status", "row", "status_label", "note",
+                 "out")
 
     def __init__(self, path):
         self.path = path
@@ -148,6 +150,7 @@ class QueueItem:
         self.note = ""
         self.row = None
         self.status_label = None
+        self.out = None                  # 处理结果文件路径
 
 
 class App:
@@ -177,6 +180,7 @@ class App:
         self.busy = False
         self.stop_flag = False
         self.last_output = None
+        self.last_image_out = None       # 最近一张加框图，供复制回剪贴板
 
         self.custom_c1 = hex2rgb(cfg.get("custom_c1", "#2468C2"))
         self.custom_c2 = hex2rgb(cfg.get("custom_c2", "#EC4899"))
@@ -194,6 +198,8 @@ class App:
 
         root.bind("<Control-v>", self.on_paste_key)
         root.bind("<Control-V>", self.on_paste_key)
+        root.bind("<Control-c>", self.on_copy_key)
+        root.bind("<Control-C>", self.on_copy_key)
 
         self.on_backdrop_change()
         self.schedule_preview()
@@ -288,6 +294,10 @@ class App:
                                        width=100)
         self.open_btn.pack(side="left", padx=2, pady=6)
         self.open_btn.configure(state="disabled")
+        self.copy_btn = self._tool_btn(bar, "复制结果", self.copy_result,
+                                       width=76)
+        self.copy_btn.pack(side="left", padx=2, pady=6)
+        self.copy_btn.configure(state="disabled")
 
         self._tool_btn(bar, "关于", self.show_about, width=52).pack(
             side="right", padx=8, pady=6)
@@ -405,6 +415,14 @@ class App:
             checkbox_width=16, checkbox_height=16, corner_radius=R,
             border_width=1, border_color="#9AA1AD", fg_color=ACCENT,
             hover_color=ACCENT_DARK).pack(anchor="w", padx=10, pady=(10, 0))
+
+        self.autocopy_var = tk.BooleanVar(value=cfg.get("autocopy", False))
+        ctk.CTkCheckBox(
+            wrap, text="处理完自动复制最后一张结果", variable=self.autocopy_var,
+            font=self.f12, checkbox_width=16, checkbox_height=16,
+            corner_radius=R, border_width=1, border_color="#9AA1AD",
+            fg_color=ACCENT, hover_color=ACCENT_DARK).pack(
+            anchor="w", padx=10, pady=(8, 0))
 
         caption("水印（右下角署名，留空不加）")
         self.wm_var = tk.StringVar(value=cfg.get("watermark", ""))
@@ -686,6 +704,39 @@ class App:
             return
         self._do_paste()
 
+    def on_copy_key(self, _event=None):
+        # 焦点在文字输入框时不抢 Ctrl+C，保持正常文本复制
+        w = self.root.focus_get()
+        if isinstance(w, (tk.Entry, tk.Text)):
+            return
+        self.copy_result()
+
+    def copy_result(self):
+        """把加框结果复制回剪贴板。优先选中项，其次最近一张。"""
+        target = None
+        if self.selected and self.selected.kind == "image" \
+                and self.selected.out:
+            target = self.selected.out
+        elif self.selected and self.selected.kind != "image" \
+                and self.selected.out:
+            self.status_var.set(
+                "选中的是文稿结果，请用「打开输出位置」查看文件。")
+            return
+        elif self.last_image_out:
+            target = self.last_image_out
+        if not target or not os.path.exists(target):
+            self.status_var.set("还没有可复制的加框结果，先处理一张图。")
+            return
+        try:
+            im = Image.open(target)
+            copy_image_to_clipboard(im)
+        except OSError as e:
+            self.status_var.set("复制失败: %r" % (e,))
+            return
+        self.status_var.set(
+            "已复制 %s（%dx%d）到剪贴板，直接去粘贴吧。"
+            % (os.path.basename(target), im.width, im.height))
+
     def _do_paste(self):
         if self.busy:
             self.status_var.set("处理中，稍后再粘贴。")
@@ -898,6 +949,8 @@ class App:
             self.clear_btn.configure(state="disabled" if busy else "normal")
             if not busy and self.last_output:
                 self.open_btn.configure(state="normal")
+            if not busy and self.last_image_out:
+                self.copy_btn.configure(state="normal")
             for it in self.queue:
                 if it.row:
                     for child in it.row.winfo_children():
@@ -922,6 +975,8 @@ class App:
                         self._set_item_status(item, "跳过·小图", TEXT_SUB)
                     else:
                         ok += 1
+                        item.out = dst
+                        self.last_image_out = dst
                         self.last_output = os.path.dirname(dst)
                         self._set_item_status(item, "完成", OK_GREEN)
                 else:
@@ -938,6 +993,7 @@ class App:
                         item.path, out_path, style, log=lambda m: None)
                     ok += done
                     skip += skipped
+                    item.out = dst
                     self.last_output = dst
                     self._set_item_status(item, "完成 %d张" % done, OK_GREEN,
                                           "跳过%d" % skipped)
@@ -953,6 +1009,13 @@ class App:
             summary += "，失败 %d 个" % fail
         if self.stop_flag:
             summary = "已停止。" + summary
+        if self.autocopy_var.get() and self.last_image_out \
+                and not self.stop_flag:
+            try:
+                copy_image_to_clipboard(Image.open(self.last_image_out))
+                summary += "。最后一张已复制到剪贴板，直接去粘贴吧"
+            except OSError as e:
+                summary += "。自动复制失败: %r" % (e,)
         self.root.after(0, lambda: self.status_var.set(summary))
         self.set_busy(False)
 
@@ -1012,6 +1075,7 @@ class App:
             "out_mode": "custom" if self.out_mode.get() == "自定义目录"
                         else "sub",
             "out_dir": self.out_dir,
+            "autocopy": self.autocopy_var.get(),
         })
         self.root.destroy()
 

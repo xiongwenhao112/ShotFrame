@@ -36,6 +36,7 @@ def main():
         import shutil
         import shotframe.gui as G
         from shotframe.core import make_sample
+        orig_grab = G.ImageGrab.grabclipboard
         # 分支1: 剪贴板是一张图
         G.ImageGrab.grabclipboard = lambda: make_sample(420, 280)
         n0 = len(app.queue)
@@ -53,6 +54,7 @@ def main():
         ok_list = any(os.path.basename(it.path) == "复制的文件.png"
                       for it in app.queue)
         app._pasted_files.append(listfile)
+        G.ImageGrab.grabclipboard = orig_grab   # 恢复，别污染后面的读回
         print("FLOW-OK paste image branch:", ok_img,
               "file branch:", ok_list)
 
@@ -82,6 +84,22 @@ def main():
         print("FLOW-OK done, statuses:", statuses,
               "img out:", os.path.exists(OUT1),
               "md out:", os.path.exists(MD_OUT))
+
+        # 复制结果回剪贴板（真实剪贴板往返）
+        from PIL import Image as _Img, ImageGrab as _Grab
+        img_item = next(it for it in app.queue
+                        if it.kind == "image" and it.out)
+        app.select_item(img_item)
+        app.copy_result()
+        back = _Grab.grabclipboard()
+        want = _Img.open(img_item.out).size
+        ok_copy = back is not None and getattr(back, "size", None) == want
+        md_item = next(it for it in app.queue if it.kind == "md")
+        app.select_item(md_item)
+        app.copy_result()
+        ok_doc_msg = "文稿" in app.status_var.get()
+        print("FLOW-OK copy result roundtrip:", ok_copy,
+              "doc branch msg:", ok_doc_msg)
 
         # 移除一项 + 清空
         app.remove_item(app.queue[0])
