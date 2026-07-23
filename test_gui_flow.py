@@ -32,6 +32,30 @@ def main():
         print("FLOW-OK enqueued 3, still waiting:", n_wait == 3,
               "not auto-processed:", not os.path.exists(OUT1))
 
+    def step_paste():
+        import shutil
+        import shotframe.gui as G
+        from shotframe.core import make_sample
+        # 分支1: 剪贴板是一张图
+        G.ImageGrab.grabclipboard = lambda: make_sample(420, 280)
+        n0 = len(app.queue)
+        app._do_paste()
+        pasted = [it for it in app.queue
+                  if os.path.basename(it.path).startswith("剪贴板-")]
+        ok_img = (len(app.queue) == n0 + 1 and len(pasted) == 1
+                  and os.path.exists(pasted[0].path))
+        app._pasted_files = [it.path for it in pasted]
+        # 分支2: 剪贴板是复制的文件列表
+        listfile = os.path.join(HERE, "test_data", "复制的文件.png")
+        shutil.copy2(IMG1, listfile)
+        G.ImageGrab.grabclipboard = lambda: [listfile]
+        app._do_paste()
+        ok_list = any(os.path.basename(it.path) == "复制的文件.png"
+                      for it in app.queue)
+        app._pasted_files.append(listfile)
+        print("FLOW-OK paste image branch:", ok_img,
+              "file branch:", ok_list)
+
     def step_style():
         app.frame_var.set("浏览器")
         app.backdrop_var.set(CUSTOM_GRAD)
@@ -67,12 +91,19 @@ def main():
         app.root.after(600, finish)
 
     def finish():
+        # 清理粘贴产物（含加框输出）
+        for f in getattr(app, "_pasted_files", []):
+            for target in (f, os.path.join(os.path.dirname(f), "加框",
+                                           os.path.basename(f))):
+                if os.path.exists(target):
+                    os.remove(target)
         print("FLOW-OK closing")
         app.on_close()
 
     app.root.after(600, step_enqueue)
-    app.root.after(1200, step_style)
-    app.root.after(2200, step_process)
+    app.root.after(1200, step_paste)
+    app.root.after(1800, step_style)
+    app.root.after(2800, step_process)
     app.run()
     print("FLOW-OK exited cleanly")
 

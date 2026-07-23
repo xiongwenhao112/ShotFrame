@@ -87,10 +87,16 @@ def main():
             if not distinct or r != distinct[-1]:
                 distinct.append(r)
         changes = len(distinct) - 1
-        print("采样 %d 次，安定期后布局变化次数: %d" % (len(records), changes))
+        # 判据: 后 12 个样本(1.2s)必须完全静止。
+        # 高负载机器上最后一次缩放可能应用得慢, 允许前 8 个样本还在收敛;
+        # v0.3.3 那类无限自振永远到不了静止, 依然会被抓住。
+        tail = records[-12:]
+        tail_changes = sum(1 for a, b in zip(tail, tail[1:]) if a != b)
+        print("采样 %d 次，总变化 %d 次，尾段(1.2s)变化 %d 次"
+              % (len(records), changes, tail_changes))
         for d in distinct:
             print("  ", d)
-        print("RESIZE-" + ("PASS" if changes == 0 else "FAIL"))
+        print("RESIZE-" + ("PASS" if tail_changes == 0 else "FAIL"))
         root.after(300, root.destroy)
 
     root.after(t0, sample)

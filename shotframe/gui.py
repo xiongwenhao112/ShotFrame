@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """ShotFrame 图形界面：办公软件风格（工具栏 + 分组面板 + 状态栏）。"""
+import datetime
 import json
 import os
 import subprocess
@@ -9,7 +10,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import colorchooser, filedialog
 
-from PIL import Image
+from PIL import Image, ImageGrab
 
 from . import __version__
 from .core import (BACKDROPS, FRAMES, IMAGE_EXTS, PAD_NAMES, FrameStyle,
@@ -191,6 +192,9 @@ class App:
             self.queue_panel.dnd_bind("<<DropEnter>>", self._drag_on)
             self.queue_panel.dnd_bind("<<DropLeave>>", self._drag_off)
 
+        root.bind("<Control-v>", self.on_paste_key)
+        root.bind("<Control-V>", self.on_paste_key)
+
         self.on_backdrop_change()
         self.schedule_preview()
         root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -264,6 +268,8 @@ class App:
         self._tool_btn(bar, "添加文件", self.browse, width=76).pack(
             side="left", padx=(8, 2), pady=6)
         self._tool_btn(bar, "添加文件夹", self.browse_dir, width=88).pack(
+            side="left", padx=2, pady=6)
+        self._tool_btn(bar, "粘贴截图", self._do_paste, width=76).pack(
             side="left", padx=2, pady=6)
         self.clear_btn = self._tool_btn(bar, "清空列表", self.clear_queue,
                                         width=76)
@@ -505,7 +511,8 @@ class App:
         self.queue_list.pack(fill="both", expand=True)
         self.empty_hint = ctk.CTkLabel(
             self.queue_list,
-            text="将 图片 / 文件夹 / docx / md 拖入此处，或使用工具栏「添加文件」",
+            text="将 图片 / 文件夹 / docx / md 拖入此处\n"
+                 "Ctrl+V 可直接粘贴剪贴板里的截图",
             text_color="#9AA1AD", font=self.f12)
         self.empty_hint.pack(pady=22)
 
@@ -524,7 +531,7 @@ class App:
         bar.pack(fill="x", side="bottom")
         bar.pack_propagate(False)
         self.status_var = tk.StringVar(
-            value="就绪。将文件加入队列后，点工具栏「开始处理」。")
+            value="就绪。拖入文件或 Ctrl+V 粘贴截图，然后点「开始处理」。")
         ctk.CTkLabel(bar, textvariable=self.status_var, font=self.f11,
                      text_color=TEXT_SUB, anchor="w").pack(
             side="left", fill="x", expand=True, padx=10)
@@ -660,6 +667,59 @@ class App:
     def on_drop(self, event):
         self._drag_off(None)
         self.add_paths(split_dnd_paths(event.data))
+
+    # ------------------------------------------------------------ 剪贴板
+
+    @staticmethod
+    def _paste_dir():
+        pictures = os.path.join(os.path.expanduser("~"), "Pictures")
+        base = pictures if os.path.isdir(pictures) \
+            else os.path.expanduser("~")
+        d = os.path.join(base, "ShotFrame")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def on_paste_key(self, _event=None):
+        # 焦点在文字输入框时不抢 Ctrl+V，保持正常文本粘贴
+        w = self.root.focus_get()
+        if isinstance(w, (tk.Entry, tk.Text)):
+            return
+        self._do_paste()
+
+    def _do_paste(self):
+        if self.busy:
+            self.status_var.set("处理中，稍后再粘贴。")
+            return
+        try:
+            grabbed = ImageGrab.grabclipboard()
+        except Exception as e:  # noqa: BLE001
+            self.status_var.set("读取剪贴板失败: %r" % (e,))
+            return
+        if grabbed is None:
+            self.status_var.set("剪贴板里没有图片或文件。")
+            return
+        if isinstance(grabbed, list):
+            self.add_paths([p for p in grabbed if isinstance(p, str)])
+            return
+        # 剪贴板是一张图：落盘到 图片/ShotFrame/ 再入队
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        d = self._paste_dir()
+        path = os.path.join(d, "剪贴板-%s.png" % stamp)
+        n = 2
+        while os.path.exists(path):
+            path = os.path.join(d, "剪贴板-%s-%d.png" % (stamp, n))
+            n += 1
+        try:
+            grabbed.save(path, "PNG")
+        except OSError as e:
+            self.status_var.set("保存剪贴板图片失败: %r" % (e,))
+            return
+        self.add_paths([path])
+        item = next((it for it in self.queue if it.path == path), None)
+        if item:
+            self.select_item(item)
+            self.status_var.set(
+                "已粘贴 %dx%d 截图入队，点「开始处理」。" % grabbed.size)
 
     def browse(self):
         paths = filedialog.askopenfilenames(

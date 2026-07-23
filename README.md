@@ -1,7 +1,7 @@
 # ShotFrame · 截图加框
 
 <p align="left">
-  <img src="https://img.shields.io/badge/version-0.4.0-2468C2" alt="version">
+  <img src="https://img.shields.io/badge/version-0.5.0-2468C2" alt="version">
   <img src="https://img.shields.io/github/license/xiongwenhao112/ShotFrame?color=1E7E45" alt="license">
   <img src="https://img.shields.io/badge/platform-Windows-informational" alt="platform">
   <img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white" alt="python">
@@ -36,6 +36,7 @@
 ## 特点
 
 - **文件队列**：图片、文件夹、docx、Markdown 拖入队列，确认样式后点「开始处理」统一执行；逐文件状态回写，可移除、可停止、带进度条
+- **剪贴板粘贴**：截完图直接 Ctrl+V 入队（自动存到 图片/ShotFrame/），在资源管理器复制的文件也能 V 进来；输入框聚焦时不抢粘贴
 - **实时预览**：左边改样式右边立刻看效果，点击队列里的图片直接预览实图
 - **docx / Markdown 整篇处理**：写完的稿子不用一张张抠图重贴。docx 拖进来，所有插图加框并自动修正显示比例；Markdown 拖进来，本地引用的图片全部加框并改写引用（网络图片自动跳过）。都输出「原名-加框」新文件，原稿不动
 - **水印署名**：右下角可加「公众号 · 你的名字」小字，颜色随背景自动适配
@@ -44,7 +45,7 @@
 
 ## 下载使用
 
-到 [Releases](../../releases) 下载 `ShotFrame.exe`，双击打开，把图拖进去。
+到 [Releases](../../releases) 下载 `ShotFrame.exe`，双击打开，把图拖进去，或者截图后直接 Ctrl+V。
 
 标签文字（浏览器样式下显示为地址栏网址）、窗口圆点均可配置，设置会自动记住。小于 200×100 的小图（表情、图标）自动跳过。
 
