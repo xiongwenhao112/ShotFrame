@@ -47,5 +47,19 @@ def make_docx(path, n_images=3):
     return path
 
 
+MD = os.path.join(DATA, "测试文章.md")
+
+
+def ensure_md_fixture():
+    """生成引用一张本地图片的测试 Markdown。"""
+    ensure_fixtures()
+    if not os.path.exists(MD):
+        with open(MD, "w", encoding="utf-8") as f:
+            f.write("# 测试文章\n\n正文一段。\n\n"
+                    "![示例](image1.png)\n\n又一段。\n")
+    return MD
+
+
 if __name__ == "__main__":
     print(ensure_fixtures())
+    print(ensure_md_fixture())

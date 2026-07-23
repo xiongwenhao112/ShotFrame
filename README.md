@@ -1,7 +1,7 @@
 # ShotFrame · 截图加框
 
 <p align="left">
-  <img src="https://img.shields.io/badge/version-0.3.4-2468C2" alt="version">
+  <img src="https://img.shields.io/badge/version-0.4.0-2468C2" alt="version">
   <img src="https://img.shields.io/github/license/xiongwenhao112/ShotFrame?color=1E7E45" alt="license">
   <img src="https://img.shields.io/badge/platform-Windows-informational" alt="platform">
   <img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white" alt="python">
@@ -35,9 +35,9 @@
 
 ## 特点
 
-- **文件队列**：图片、文件夹、docx 拖入队列，确认样式后点「开始处理」统一执行；逐文件状态回写，可移除、可停止、带进度条
+- **文件队列**：图片、文件夹、docx、Markdown 拖入队列，确认样式后点「开始处理」统一执行；逐文件状态回写，可移除、可停止、带进度条
 - **实时预览**：左边改样式右边立刻看效果，点击队列里的图片直接预览实图
-- **docx 整篇处理**：写完的稿子不用一张张抠图重贴，把 .docx 拖进来，所有插图加框并自动修正显示比例，输出「原名-加框.docx」，原文件不动
+- **docx / Markdown 整篇处理**：写完的稿子不用一张张抠图重贴。docx 拖进来，所有插图加框并自动修正显示比例；Markdown 拖进来，本地引用的图片全部加框并改写引用（网络图片自动跳过）。都输出「原名-加框」新文件，原稿不动
 - **水印署名**：右下角可加「公众号 · 你的名字」小字，颜色随背景自动适配
 - **输出可控**：默认输出到同目录「加框」文件夹，也可指定任意目录
 - **离线 + 开源**：本地运行不上传，MIT 协议，设置自动记忆，核心就几百行
@@ -54,6 +54,7 @@
 ShotFrame.exe 截图.png --frame mac --bg gray --label "实测截图"
 ShotFrame.exe 截图文件夹 --frame browser --bg grad-violet --recursive
 ShotFrame.exe 我的稿子.docx --frame win11 --bg purple
+ShotFrame.exe 我的文章.md --frame mac --bg gray          # Markdown 同样整篇处理
 ShotFrame.exe 图.png --bg-color "#6C5CE7,#EC4899" --pad loose --radius 18 \
     --shadow 80 --watermark "公众号 · 笃行其道"      # 自定义渐变+水印
 ShotFrame.exe --list-styles        # 列出全部样式
@@ -84,7 +85,7 @@ build.bat
 
 **Windows Defender 报毒？** PyInstaller 打包的单文件 exe 存在误报概率，这是打包方式的通病，不是程序有问题。介意的话请直接用源码运行，或自行打包。
 
-**docx 里有的图没处理？** 矢量图（emf/wmf/svg）、动图（gif）和小于 200×100 的图会跳过，处理日志里会写明。
+**文稿里有的图没处理？** 矢量图（emf/wmf/svg）、动图（gif）、小于 200×100 的图会跳过；Markdown 里的网络图片（http/https）和找不到的引用也会跳过，处理日志里都会写明。
 
 **图片会变形吗？** 不会。docx 模式下每张图的显示高度会按新宽高比重新计算，宽度保持不变，回归测试里有专门的比例一致性校验。
 
@@ -94,7 +95,7 @@ build.bat
 
 ## 原理
 
-一张卡片 = 背景画布（纯色/对角渐变）+ 投影 + 窗口（标题栏 + 截图本体）+ 描边。核心代码在 `shotframe/core.py`，窗口栏每种样式一个绘制函数，docx 处理在 `shotframe/docx_frame.py`，加样式只需要在 `FRAMES`/`BACKDROPS` 里添一项再写一个小函数。
+一张卡片 = 背景画布（纯色/对角渐变）+ 投影 + 窗口（标题栏 + 截图本体）+ 描边。核心代码在 `shotframe/core.py`，窗口栏每种样式一个绘制函数，docx 处理在 `shotframe/docx_frame.py`，Markdown 处理在 `shotframe/md_frame.py`，加样式只需要在 `FRAMES`/`BACKDROPS` 里添一项再写一个小函数。
 
 ## License
 

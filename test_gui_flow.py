@@ -11,22 +11,25 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from shotframe.gui import App, CUSTOM_GRAD  # noqa: E402
 
-from test_fixtures import ensure_fixtures  # noqa: E402
+from test_fixtures import ensure_fixtures, ensure_md_fixture  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IMG1, IMG9, _DOCX = ensure_fixtures()
+MD = ensure_md_fixture()
+MD_OUT = os.path.splitext(MD)[0] + "-加框.md"
 OUT1 = os.path.join(HERE, "test_data", "加框", "image1.png")
 
 
 def main():
-    if os.path.exists(OUT1):
-        os.remove(OUT1)
+    for f in (OUT1, MD_OUT):
+        if os.path.exists(f):
+            os.remove(f)
     app = App()
 
     def step_enqueue():
-        app.add_paths([IMG1, IMG9])
+        app.add_paths([IMG1, IMG9, MD])
         n_wait = sum(1 for it in app.queue if it.status == "待处理")
-        print("FLOW-OK enqueued 2, still waiting:", n_wait == 2,
+        print("FLOW-OK enqueued 3, still waiting:", n_wait == 3,
               "not auto-processed:", not os.path.exists(OUT1))
 
     def step_style():
@@ -53,7 +56,8 @@ def main():
             return
         statuses = [it.status for it in app.queue]
         print("FLOW-OK done, statuses:", statuses,
-              "output exists:", os.path.exists(OUT1))
+              "img out:", os.path.exists(OUT1),
+              "md out:", os.path.exists(MD_OUT))
 
         # 移除一项 + 清空
         app.remove_item(app.queue[0])

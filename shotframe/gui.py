@@ -15,6 +15,7 @@ from . import __version__
 from .core import (BACKDROPS, FRAMES, IMAGE_EXTS, PAD_NAMES, FrameStyle,
                    frame_image, make_sample, process_image_file)
 from .docx_frame import process_docx
+from .md_frame import process_markdown
 
 try:
     import customtkinter as ctk
@@ -135,7 +136,13 @@ class QueueItem:
 
     def __init__(self, path):
         self.path = path
-        self.kind = "docx" if path.lower().endswith(".docx") else "image"
+        low = path.lower()
+        if low.endswith(".docx"):
+            self.kind = "docx"
+        elif low.endswith((".md", ".markdown")):
+            self.kind = "md"
+        else:
+            self.kind = "image"
         self.status = "待处理"
         self.note = ""
         self.row = None
@@ -498,7 +505,7 @@ class App:
         self.queue_list.pack(fill="both", expand=True)
         self.empty_hint = ctk.CTkLabel(
             self.queue_list,
-            text="将 图片 / 文件夹 / docx 拖入此处，或使用工具栏「添加文件」",
+            text="将 图片 / 文件夹 / docx / md 拖入此处，或使用工具栏「添加文件」",
             text_color="#9AA1AD", font=self.f12)
         self.empty_hint.pack(pady=22)
 
@@ -656,8 +663,9 @@ class App:
 
     def browse(self):
         paths = filedialog.askopenfilenames(
-            title="选择图片或 docx",
-            filetypes=[("图片或文稿", "*.png *.jpg *.jpeg *.webp *.bmp *.docx"),
+            title="选择图片、docx 或 Markdown",
+            filetypes=[("图片或文稿",
+                       "*.png *.jpg *.jpeg *.webp *.bmp *.docx *.md"),
                        ("所有文件", "*.*")])
         if paths:
             self.add_paths(list(paths))
@@ -679,7 +687,8 @@ class App:
                 for f in sorted(os.listdir(p)):
                     ext = os.path.splitext(f)[1].lower()
                     full = os.path.join(p, f)
-                    if (ext in IMAGE_EXTS or ext == ".docx") \
+                    if (ext in IMAGE_EXTS
+                            or ext in (".docx", ".md", ".markdown")) \
                             and not f.startswith("~$") \
                             and full not in existing:
                         self._append_item(full)
@@ -687,7 +696,8 @@ class App:
                         added += 1
             elif os.path.isfile(p):
                 ext = os.path.splitext(p)[1].lower()
-                if (ext in IMAGE_EXTS or ext == ".docx") \
+                if (ext in IMAGE_EXTS
+                        or ext in (".docx", ".md", ".markdown")) \
                         and p not in existing:
                     self._append_item(p)
                     existing.add(p)
@@ -707,7 +717,7 @@ class App:
                            corner_radius=0)
         row.pack(fill="x")
         item.row = row
-        tag = "docx" if item.kind == "docx" else "img "
+        tag = {"docx": "docx", "md": "md  "}.get(item.kind, "img ")
         name = ctk.CTkLabel(
             row, text=" [%s] %s" % (tag, os.path.basename(path)),
             font=self.f12, text_color=TEXT_MAIN, anchor="w")
@@ -745,7 +755,7 @@ class App:
                 self.preview_src = self.sample
         else:
             self.preview_src = self.sample
-            self.preview_hint.configure(text="docx 将整篇处理，预览为示意图")
+            self.preview_hint.configure(text="文稿将整篇处理，预览为示意图")
         self.schedule_preview()
 
     def remove_item(self, item):
@@ -856,12 +866,15 @@ class App:
                         self._set_item_status(item, "完成", OK_GREEN)
                 else:
                     out_path = None
+                    suffix = ".docx" if item.kind == "docx" else                         os.path.splitext(item.path)[1]
                     if out_dir:
                         os.makedirs(out_dir, exist_ok=True)
                         base = os.path.splitext(
                             os.path.basename(item.path))[0]
-                        out_path = os.path.join(out_dir, base + "-加框.docx")
-                    dst, done, skipped = process_docx(
+                        out_path = os.path.join(out_dir,
+                                                base + "-加框" + suffix)
+                    proc = process_docx if item.kind == "docx"                         else process_markdown
+                    dst, done, skipped = proc(
                         item.path, out_path, style, log=lambda m: None)
                     ok += done
                     skip += skipped
@@ -910,7 +923,7 @@ class App:
         ctk.CTkLabel(
             win, font=self.f11, text_color=TEXT_SUB, justify="center",
             text="给公众号 / 知乎 / 博客作者的截图美化工具\n"
-                 "5 种窗口框 × 预设与自定义背景 × docx 整篇处理").pack(pady=8)
+                 "5 种窗口框 × 预设与自定义背景 × docx/Markdown 整篇处理").pack(pady=8)
         ctk.CTkButton(win, text="打开开源主页", font=self.f12,
                       corner_radius=R, fg_color=ACCENT,
                       hover_color=ACCENT_DARK, height=28,

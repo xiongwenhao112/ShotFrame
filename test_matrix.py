@@ -88,6 +88,36 @@ def t_docx():
         check("docx 显示比例一致", bad == 0, "mismatch=%d" % bad)
 
 
+def t_markdown():
+    from shotframe.md_frame import process_markdown
+    from shotframe.core import make_sample
+    with tempfile.TemporaryDirectory() as td:
+        imgdir = os.path.join(td, "assets")
+        os.makedirs(imgdir)
+        make_sample(500, 320).save(os.path.join(imgdir, "big.png"))
+        Image.new("RGB", (100, 50), (200, 200, 200)).save(
+            os.path.join(imgdir, "tiny.png"))
+        md = os.path.join(td, "a.md")
+        with open(md, "w", encoding="utf-8") as f:
+            f.write("![b](assets/big.png)\n![b2](assets/big.png)\n"
+                    "![t](assets/tiny.png)\n"
+                    "![r](https://example.com/x.png)\n"
+                    "![m](assets/missing.png)\n"
+                    "<img src=\"assets/big.png\">\n")
+        out, done, skipped = process_markdown(md)
+        text = open(out, encoding="utf-8").read()
+        check("md 加框张数", done == 1 and skipped == 3,
+              "done=%d skip=%d" % (done, skipped))
+        check("md 引用改写",
+              text.count("assets/big-加框.png") == 3
+              and "assets/tiny.png" in text
+              and "https://example.com/x.png" in text)
+        check("md 输出与原图保留",
+              os.path.exists(out)
+              and os.path.exists(os.path.join(imgdir, "big.png"))
+              and os.path.exists(os.path.join(imgdir, "big-加框.png")))
+
+
 def t_custom_and_params():
     sample = make_sample(420, 260)
     solid = frame_image(sample, FrameStyle(
@@ -132,6 +162,7 @@ def main():
     t_edge_sizes()
     t_jpg_roundtrip()
     t_docx()
+    t_markdown()
     t_custom_and_params()
     t_cli()
     print("=" * 40)

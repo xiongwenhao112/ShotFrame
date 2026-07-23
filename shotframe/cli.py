@@ -8,6 +8,7 @@ from . import __version__
 from .core import (BACKDROPS, FRAMES, IMAGE_EXTS, LEGACY_PRESETS, FrameStyle,
                    process_image_file)
 from .docx_frame import process_docx
+from .md_frame import process_markdown
 
 
 def collect_inputs(paths, recursive=False):
@@ -21,13 +22,13 @@ def collect_inputs(paths, recursive=False):
                     full = os.path.join(root, f)
                     if ext in IMAGE_EXTS:
                         images.append(full)
-                    elif ext == ".docx" and not f.startswith("~$"):
+                    elif ext in (".docx", ".md", ".markdown")                             and not f.startswith("~$"):
                         docs.append(full)
         elif os.path.isfile(p):
             ext = os.path.splitext(p)[1].lower()
             if ext in IMAGE_EXTS:
                 images.append(p)
-            elif ext == ".docx":
+            elif ext in (".docx", ".md", ".markdown"):
                 docs.append(p)
             else:
                 print("不支持的文件类型，已跳过:", p)
@@ -94,8 +95,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="ShotFrame",
         description="给截图加窗口卡片边框，让读者一眼认出这是截图。"
-                    "支持图片、文件夹和 docx 文稿。")
-    parser.add_argument("paths", nargs="*", help="图片 / 文件夹 / docx 路径")
+                    "支持图片、文件夹、docx 和 Markdown 文稿。")
+    parser.add_argument("paths", nargs="*", help="图片 / 文件夹 / docx / md 路径")
     parser.add_argument("--frame", default="mac", choices=list(FRAMES),
                         help="窗口样式，默认 mac")
     parser.add_argument("--bg", default="gray", choices=list(BACKDROPS),
@@ -154,7 +155,8 @@ def main(argv=None):
             print("完成:", dst)
             ok += 1
     for d in docs:
-        out_path, done, skipped = process_docx(
+        proc = process_docx if d.lower().endswith(".docx")             else process_markdown
+        out_path, done, skipped = proc(
             d, None, style, log=lambda m: print("  " + m))
         print("完成: %s（加框 %d 张，跳过 %d 张）" % (out_path, done, skipped))
         ok += done
