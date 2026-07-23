@@ -184,6 +184,7 @@ class App:
 
         self.custom_c1 = hex2rgb(cfg.get("custom_c1", "#2468C2"))
         self.custom_c2 = hex2rgb(cfg.get("custom_c2", "#EC4899"))
+        self.presets = dict(cfg.get("presets", {}))   # 名称 -> 样式快照
 
         self._build_toolbar()
         self._build_body(cfg)
@@ -201,6 +202,7 @@ class App:
         root.bind("<Control-c>", self.on_copy_key)
         root.bind("<Control-C>", self.on_copy_key)
 
+        self._refresh_preset_menu()
         self.on_backdrop_change()
         self.schedule_preview()
         root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -335,7 +337,28 @@ class App:
                          text_color=TEXT_SUB, anchor="w").pack(
                 fill="x", padx=10, pady=pady)
 
-        caption("窗口样式", pady=(8, 3))
+        caption("预设方案", pady=(8, 3))
+        self.preset_sel = tk.StringVar(value=cfg.get("last_preset", ""))
+        self.preset_menu = ctk.CTkOptionMenu(
+            wrap, values=["（无预设）"], variable=self.preset_sel,
+            command=self.apply_preset, font=self.f12,
+            dropdown_font=self.f12, height=28, corner_radius=R,
+            fg_color="#F2F3F6", button_color="#DDE1E8",
+            button_hover_color="#CFD5DE", text_color=TEXT_MAIN)
+        self.preset_menu.pack(fill="x", padx=10)
+        prow = ctk.CTkFrame(wrap, fg_color="transparent")
+        prow.pack(fill="x", padx=10, pady=(4, 0))
+        ctk.CTkButton(prow, text="保存当前为预设", height=24, font=self.f11,
+                      corner_radius=R, fg_color="#EEF0F6",
+                      text_color=TEXT_MAIN, hover_color="#E2E4EE",
+                      command=self.save_preset).pack(
+            side="left", fill="x", expand=True, padx=(0, 4))
+        ctk.CTkButton(prow, text="删除", width=48, height=24, font=self.f11,
+                      corner_radius=R, fg_color="#EEF0F6",
+                      text_color=TEXT_MAIN, hover_color="#E2E4EE",
+                      command=self.delete_preset).pack(side="left")
+
+        caption("窗口样式")
         self.frame_var = tk.StringVar(
             value=FRAME_SHORT.get(cfg.get("frame", "mac"), "Mac浅"))
         ctk.CTkSegmentedButton(
@@ -461,17 +484,16 @@ class App:
         val = ctk.CTkLabel(row, text=str(var.get()), font=self.f11,
                            text_color=TEXT_MAIN, width=28, anchor="e")
         val.pack(side="right")
-
-        def on_change(_v):
-            val.configure(text=str(int(var.get())))
-            self.schedule_preview()
+        # 跟踪变量而不是只挂滑杆回调，应用预设时数值标签同样刷新
+        var.trace_add("write",
+                      lambda *_: val.configure(text=str(int(var.get()))))
         ctk.CTkSlider(row, from_=lo, to=hi, number_of_steps=steps,
                       variable=var, height=14, corner_radius=R,
                       button_corner_radius=R, border_width=0,
                       progress_color=ACCENT, button_color=ACCENT,
                       button_hover_color=ACCENT_DARK,
-                      command=on_change).pack(side="left", fill="x",
-                                              expand=True, padx=(0, 6))
+                      command=lambda _v: self.schedule_preview()).pack(
+            side="left", fill="x", expand=True, padx=(0, 6))
 
     # ---- 预览面板
     def _build_preview(self, panel):
@@ -632,6 +654,79 @@ class App:
             min_width=1 if for_preview else 200,
             min_height=1 if for_preview else 100,
         )
+
+    # ------------------------------------------------------------ 预设方案
+
+    def _refresh_preset_menu(self):
+        names = list(self.presets) or ["（无预设）"]
+        self.preset_menu.configure(values=names)
+        if self.preset_sel.get() not in self.presets:
+            self.preset_sel.set(names[0] if self.presets else "（无预设）")
+
+    def _collect_style_dict(self):
+        return {
+            "frame": FRAME_BY_SHORT.get(self.frame_var.get(), "mac"),
+            "backdrop_name": self.backdrop_var.get(),
+            "custom_c1": rgb2hex(self.custom_c1),
+            "custom_c2": rgb2hex(self.custom_c2),
+            "label": self.label_var.get(),
+            "dots": self.dots_var.get(),
+            "pad": PAD_BY_NAME.get(self.pad_var.get(), "normal"),
+            "radius": int(self.radius_var.get()),
+            "shadow": int(self.shadow_var.get()),
+            "watermark": self.wm_var.get(),
+        }
+
+    def _apply_style_dict(self, d):
+        self.frame_var.set(FRAME_SHORT.get(d.get("frame", "mac"), "Mac浅"))
+        self.backdrop_var.set(d.get("backdrop_name", "浅灰"))
+        self.custom_c1 = hex2rgb(d.get("custom_c1", "#2468C2"))
+        self.custom_c2 = hex2rgb(d.get("custom_c2", "#EC4899"))
+        self.c1_btn.configure(fg_color=rgb2hex(self.custom_c1),
+                              hover_color=rgb2hex(self.custom_c1),
+                              text_color=contrast_text(self.custom_c1))
+        self.c2_btn.configure(fg_color=rgb2hex(self.custom_c2),
+                              hover_color=rgb2hex(self.custom_c2),
+                              text_color=contrast_text(self.custom_c2))
+        self.label_var.set(d.get("label", "实测截图"))
+        self.dots_var.set(bool(d.get("dots", True)))
+        self.pad_var.set(PAD_NAMES.get(d.get("pad", "normal"), "标准"))
+        self.radius_var.set(int(d.get("radius", 12)))
+        self.shadow_var.set(int(d.get("shadow", 60)))
+        self.wm_var.set(d.get("watermark", ""))
+        self.on_backdrop_change()        # 含 schedule_preview
+
+    def _ask_preset_name(self):
+        dlg = ctk.CTkInputDialog(text="给这套样式起个名字：", title="保存预设")
+        return (dlg.get_input() or "").strip()
+
+    def save_preset(self):
+        name = self._ask_preset_name()
+        if not name:
+            return
+        exists = name in self.presets
+        self.presets[name] = self._collect_style_dict()
+        self._refresh_preset_menu()
+        self.preset_sel.set(name)
+        self.status_var.set("预设「%s」已%s。" % (name,
+                                               "更新" if exists else "保存"))
+
+    def apply_preset(self, name=None):
+        name = name or self.preset_sel.get()
+        d = self.presets.get(name)
+        if not d:
+            return
+        self._apply_style_dict(d)
+        self.status_var.set("已应用预设「%s」。" % name)
+
+    def delete_preset(self):
+        name = self.preset_sel.get()
+        if name not in self.presets:
+            self.status_var.set("没有可删除的预设。")
+            return
+        del self.presets[name]
+        self._refresh_preset_menu()
+        self.status_var.set("预设「%s」已删除。" % name)
 
     # ------------------------------------------------------------ 预览
 
@@ -1076,6 +1171,9 @@ class App:
                         else "sub",
             "out_dir": self.out_dir,
             "autocopy": self.autocopy_var.get(),
+            "presets": self.presets,
+            "last_preset": self.preset_sel.get()
+                           if self.preset_sel.get() in self.presets else "",
         })
         self.root.destroy()
 

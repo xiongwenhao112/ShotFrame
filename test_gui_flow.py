@@ -71,6 +71,24 @@ def main():
         app.render_preview()
         print("FLOW-OK style + custom gradient + watermark, preview rendered")
 
+    def step_preset():
+        # 保存当前样式为预设 -> 改乱 -> 应用预设恢复 -> 删除
+        app._ask_preset_name = lambda: "测试预设"
+        app.save_preset()
+        saved = "测试预设" in app.presets
+        app.frame_var.set("Mac浅")
+        app.radius_var.set(0)
+        app.wm_var.set("")
+        app.apply_preset("测试预设")
+        restored = (app.frame_var.get() == "浏览器"
+                    and int(app.radius_var.get()) == 18
+                    and app.wm_var.get() == "公众号 · 笃行其道"
+                    and app.backdrop_var.get() == "自定义渐变")
+        app.delete_preset()
+        gone = "测试预设" not in app.presets
+        print("FLOW-OK preset save:", saved, "apply:", restored,
+              "delete:", gone)
+
     def step_process():
         app.start_processing()
         print("FLOW-OK processing started, busy:", app.busy)
@@ -121,7 +139,8 @@ def main():
     app.root.after(600, step_enqueue)
     app.root.after(1200, step_paste)
     app.root.after(1800, step_style)
-    app.root.after(2800, step_process)
+    app.root.after(2400, step_preset)
+    app.root.after(3200, step_process)
     app.run()
     print("FLOW-OK exited cleanly")
 
